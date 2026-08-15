@@ -1,0 +1,75 @@
+<svg width="512" height="512" viewBox="0 0 512 512"
+     fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="#111111"/>
+  <!-- Suit line art -->
+  <g opacity="0.28"
+     stroke="#C9A45C"
+     stroke-width="4"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+    <!-- Head -->
+    <circle cx="125" cy="105" r="24"/>
+    <!-- Neck -->
+    <path d="M113 126 L113 145"/>
+    <path d="M137 126 L137 145"/>
+    <!-- Jacket shoulders -->
+    <path d="M113 142 L78 162 L62 250"/>
+    <path d="M137 142 L172 162 L188 250"/>
+    <!-- Jacket -->
+    <path d="M78 162 L88 330"/>
+    <path d="M172 162 L162 330"/>
+    <path d="M88 330 L162 330"/>
+    <!-- Shirt -->
+    <path d="M113 143 L125 165 L137 143"/>
+    <path d="M125 165 L125 260"/>
+    <!-- Tie -->
+    <path d="M125 166 L115 190 L125 215 L135 190 Z"/>
+    <!-- Jacket lapels -->
+    <path d="M113 143 L95 185 L125 220"/>
+    <path d="M137 143 L155 185 L125 220"/>
+    <!-- Pocket -->
+    <path d="M145 245 L160 255"/>
+  </g>
+  <!-- Dress line art -->
+  <g opacity="0.28"
+     stroke="#C9A45C"
+     stroke-width="4"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+    <!-- Head -->
+    <circle cx="387" cy="105" r="23"/>
+    <!-- Neck -->
+    <path d="M377 125 L377 145"/>
+    <path d="M397 125 L397 145"/>
+    <!-- Shoulders -->
+    <path d="M377 143 L355 158"/>
+    <path d="M397 143 L419 158"/>
+    <!-- Dress upper body -->
+    <path d="M355 158 L367 225"/>
+    <path d="M419 158 L407 225"/>
+    <!-- Waist -->
+    <path d="M367 225 Q387 235 407 225"/>
+    <!-- Dress skirt -->
+    <path d="M367 225 L325 355"/>
+    <path d="M407 225 L449 355"/>
+    <path d="M325 355 Q387 375 449 355"/>
+    <!-- Dress neckline -->
+    <path d="M377 143 Q387 158 397 143"/>
+    <!-- Dress folds -->
+    <path d="M367 225 L350 350"/>
+    <path d="M387 230 L387 365"/>
+    <path d="M407 225 L424 350"/>
+  </g>
+  <!-- Brand Name -->
+  <text
+    x="50%"
+    y="50%"
+    text-anchor="middle"
+    font-family="serif"
+    font-size="112"
+    font-weight="bold">
+    <tspan x="50%" dy="-0.48em" fill="#C9A45C">High</tspan>
+    <tspan x="50%" dy="0.95em" fill="#F2E6CC">Class</tspan>
+  </text>
+</svg>

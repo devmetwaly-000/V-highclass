@@ -1,0 +1,835 @@
+
+"use client";
+
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Trash2,
+  CheckCircle,
+  Printer,
+  Ruler,
+  Scissors,
+  MapPin,
+  Loader2,
+  FileText,
+  Database,
+  Calculator,
+  AlertCircle,
+  PlusCircle,
+  Hash,
+  CalendarX2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import type { Product, User, Order, Branch, Customer, Shift, StockMovement, Region } from '@/lib/definitions';
+import { Textarea } from '@/components/ui/textarea';
+import { format, formatISO, isValid } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { Separator } from '@/components/ui/separator';
+import { StartShiftDialog } from '@/components/start-shift-dialog';
+import { useUser, useDatabase } from '@/firebase';
+import { useRtdbList } from '@/hooks/use-rtdb';
+import { useToast } from '@/hooks/use-toast';
+import { ref, set, push, runTransaction, update, get } from 'firebase/database';
+import { PrintCashierReceiptDialog as PrintReceipt } from './print-cashier-receipt-dialog';
+import { DatePickerDialog } from './ui/date-picker-dialog';
+import { SelectProductDialog } from './select-product-dialog';
+import { SelectCustomerDialog } from './select-customer-dialog';
+import { usePermissions } from '@/hooks/use-permissions';
+import { useSettings } from '@/hooks/use-settings';
+import { Switch } from '@/components/ui/switch';
+import { db } from '@/lib/db';
+import { checkRentalConflict } from '@/lib/rental-conflict';
+import { format as formatDate } from 'date-fns';
+import { ar } from 'date-fns/locale';
+
+type OrderItemState = {
+  id: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  transactionBasePrice: number;
+  unitPrice: number;
+  originalUnitPrice: number;
+  itemDiscount: number; 
+  totalPrice: number;
+  tailorNotes?: string | null;
+  measurements?: string | null;
+  productCode: string;
+  itemTransactionType?: 'Sale' | 'Rental' | null;
+  productCategory?: string;
+  salePrice?: number;
+  rentalPrice?: number;
+};
+
+function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?: Order, initialProductId?: string, closeDialog: () => void }) {
+  const isEditMode = !!order;
+  const { appUser } = useUser();
+  const { settings } = useSettings();
+  const { data: allUsers } = useRtdbList<User>('users');
+  const { data: customers } = useRtdbList<Customer>('customers');
+  const { data: branches } = useRtdbList<Branch>('branches');
+  const { data: regions } = useRtdbList<Region>('regions');
+  const { data: allOrders } = useRtdbList<Order>('daily-entries');
+  
+  const dbRTDB = useDatabase();
+  const { toast } = useToast();
+  
+  const [view, setView] = useState<'form' | 'success'>('form');
+  const [lastOrder, setLastOrder] = useState<Order | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [openShift, setOpenShift] = useState<Shift | null>(null);
+
+  const [cachedProducts, setCachedProducts] = useState<Product[]>([]);
+  const [isProductsLoading, setIsProductsLoading] = useState(true);
+
+  const [branchId, setBranchId] = useState<string | undefined>();
+  const [customerId, setCustomerId] = useState<string | undefined>();
+  const [regionId, setRegionId] = useState<string>('none');
+  const [transactionType, setTransactionType] = useState<string | undefined>('Rental');
+  const [orderDate, setOrderDate] = useState<Date | undefined>(new Date());
+  const [deliveryDate, setDeliveryDate] = useState<Date | undefined>();
+  const [returnDate, setReturnDate] = useState<Date | undefined>();
+  const [orderItems, setOrderItems] = useState<OrderItemState[]>([]);
+  const [sellerId, setSellerId] = useState<string | undefined>();
+  const [paidAmount, setPaidAmount] = useState<number>(0);
+  const [paymentMethod, setPaymentMethod] = useState<string>('Cash');
+  const [notes, setNotes] = useState('');
+  const [isImmediateDelivery, setIsImmediateDelivery] = useState(false);
+
+  const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
+  const { permissions } = usePermissions(['orders:apply-discount'] as const);
+  const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
+  const [conflictWarning, setConflictWarning] = useState<string | null>(null);
+
+  // تحميل المنتجات من الذاكرة المحلية لضمان السرعة
+  useEffect(() => {
+      const loadProducts = async () => {
+          try {
+              const cached = await db.persistentCache.where('path').equals('products').toArray();
+              if (cached.length > 0) {
+                  setCachedProducts(cached.map(c => c.data as Product));
+              }
+          } catch (e) {
+              console.error("NewOrder: Failed to load cached products", e);
+          } finally {
+              setIsProductsLoading(false);
+          }
+      };
+      loadProducts();
+  }, []);
+
+  // التحقق من الوردية المفتوحة
+  useEffect(() => {
+    const findOpenShift = async () => {
+        if (!appUser || !dbRTDB) return;
+        try {
+            const snapshot = await get(ref(dbRTDB, 'shifts'));
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                const found = Object.keys(data)
+                    .map(id => ({ ...data[id], id }))
+                    .find(s => s.cashier?.id === appUser.id && !s.endTime);
+                setOpenShift(found || null);
+            }
+        } catch (e) {}
+    };
+    findOpenShift();
+  }, [appUser, dbRTDB]);
+
+  useEffect(() => {
+    if (isEditMode && order && !originalOrder) {
+        setOriginalOrder(JSON.parse(JSON.stringify(order)));
+    }
+  }, [order, isEditMode, originalOrder]);
+
+  const availableProducts = useMemo(() => {
+    if (!branchId) return [];
+    return cachedProducts.filter((p) => p.branchId === branchId || p.showInAllBranches);
+  }, [branchId, cachedProducts]);
+
+  // ─── المنتجات المحجوزة في فترة الطلب الحالي ────────────────────────────
+  const bookedProductIds = useMemo<Set<string>>(() => {
+    if (transactionType !== 'Rental' || !deliveryDate || !returnDate) return new Set();
+    const ids = new Set<string>();
+    for (const product of availableProducts) {
+      const result = checkRentalConflict(
+        product.id,
+        deliveryDate,
+        returnDate,
+        allOrders,
+        order?.id,
+      );
+      if (result.hasConflict) ids.add(product.id);
+    }
+    return ids;
+  }, [availableProducts, deliveryDate, returnDate, transactionType, allOrders, order?.id]);
+
+  useEffect(() => {
+    if (isEditMode && order) {
+        setBranchId(order.branchId);
+        setCustomerId(order.customerId);
+        setRegionId(order.regionId || 'none');
+        setTransactionType(order.transactionType);
+        setOrderDate(new Date(order.orderDate));
+        setDeliveryDate(order.deliveryDate ? new Date(order.deliveryDate) : undefined);
+        setReturnDate(order.returnDate ? new Date(order.returnDate) : undefined);
+        setOrderItems(order.items.map(item => {
+            const prod = cachedProducts.find(p => p.id === item.productId);
+            const discount = item.itemDiscount || 0;
+            return {
+                id: item.productId + Math.random(),
+                productId: item.productId,
+                productName: item.productName,
+                quantity: item.quantity,
+                transactionBasePrice: item.originalPrice || item.priceAtTimeOfOrder,
+                unitPrice: item.priceAtTimeOfOrder,
+                originalUnitPrice: item.originalPrice || item.priceAtTimeOfOrder,
+                itemDiscount: discount,
+                totalPrice: (item.priceAtTimeOfOrder * item.quantity),
+                tailorNotes: item.tailorNotes || null,
+                measurements: item.measurements || null,
+                productCode: item.productCode,
+                itemTransactionType: item.itemTransactionType || (order.transactionType as any) || null,
+                productCategory: prod?.category,
+                salePrice: Number(prod?.salePrice) || Number(prod?.price) || 0,
+                rentalPrice: Number(prod?.rentalPrice) || 0
+            };
+        }));
+        setSellerId(order.sellerId);
+        setPaidAmount(order.paid);
+        setNotes(order.notes || '');
+    } else if (initialProductId && cachedProducts.length > 0) {
+        const product = cachedProducts.find((p) => p.id === initialProductId);
+        if (product) {
+            setBranchId(product.branchId);
+            const defaultType = product.category === 'rental' ? 'Rental' : product.category === 'sale' ? 'Sale' : (transactionType as any || 'Rental');
+            const initialUnitPrice = defaultType === 'Sale' ? (Number(product.salePrice) || Number(product.price)) : (Number(product.rentalPrice) || Number(product.price));
+            
+            setOrderItems([{
+                id: Date.now().toString(),
+                productId: product.id,
+                productName: `${product.name} - ${product.size}`,
+                quantity: 1,
+                transactionBasePrice: initialUnitPrice,
+                unitPrice: initialUnitPrice,
+                originalUnitPrice: initialUnitPrice,
+                itemDiscount: 0,
+                totalPrice: initialUnitPrice,
+                productCode: product.productCode,
+                itemTransactionType: defaultType as any,
+                productCategory: product.category,
+                salePrice: Number(product.salePrice) || Number(product.price) || 0,
+                rentalPrice: Number(product.rentalPrice) || 0
+            }]);
+        }
+    } else if (!branchId && branches.length > 0) {
+        const myBranch = appUser?.branchId && appUser.branchId !== 'all' ? appUser.branchId : branches[0].id;
+        setBranchId(myBranch);
+    }
+  }, [order, isEditMode, initialProductId, cachedProducts, appUser, branches]);
+
+  const totalOrderAmount = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.totalPrice, 0)), [orderItems]);
+  const totalDiscounts = useMemo(() => Math.round(orderItems.reduce((sum, item) => sum + item.itemDiscount, 0)), [orderItems]);
+  const remainingAmount = useMemo(() => Math.round(totalOrderAmount - paidAmount), [totalOrderAmount, paidAmount]);
+
+  const handleUpdateItem = (id: string, updates: Partial<OrderItemState>) => {
+      setOrderItems(prev => prev.map(item => {
+          if (item.id !== id) return item;
+          const newItem = { ...item, ...updates };
+
+          if ('itemTransactionType' in updates && newItem.productCategory === 'both') {
+              const newBasePrice = updates.itemTransactionType === 'Sale' ? (newItem.salePrice || 0) : (newItem.rentalPrice || 0);
+              newItem.transactionBasePrice = newBasePrice;
+              newItem.originalUnitPrice = newBasePrice;
+          }
+
+          if ('transactionBasePrice' in updates || 'itemDiscount' in updates || 'quantity' in updates) {
+              newItem.totalPrice = (newItem.transactionBasePrice * newItem.quantity) - (newItem.itemDiscount || 0);
+              newItem.unitPrice = newItem.quantity > 0 ? newItem.totalPrice / newItem.quantity : 0;
+          }
+          return newItem;
+      }));
+  };
+
+  const handleSaveOrder = async () => {
+    if (isSaving) return;
+    
+    // 1. التحقق من البيانات الأساسية
+    if (!branchId || !customerId || !transactionType || !sellerId) {
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء التأكد من تعبئة كافة الحقول المطلوبة.' });
+        return;
+    }
+    if (orderItems.length === 0 || orderItems.every(i => !i.productId)) {
+        toast({ variant: 'destructive', title: 'بيان ناقص', description: 'يجب إضافة صنف واحد على الأقل للطلب.' });
+        return;
+    }
+
+    // ─── فحص تعارض الحجز لطلبات الإيجار ──────────────────────────────
+    if (transactionType === 'Rental' && deliveryDate && returnDate) {
+        const rentalItems = orderItems.filter(
+            i => i.productId && (i.itemTransactionType === 'Rental' || i.itemTransactionType == null)
+        );
+
+        for (const item of rentalItems) {
+            const result = checkRentalConflict(
+                item.productId,
+                deliveryDate,
+                returnDate,
+                allOrders,
+                order?.id, // استثناء الطلب الحالي عند التعديل
+            );
+
+            if (result.hasConflict) {
+                const c = result.conflictingOrders[0];
+                const dFmt = (d: string) =>
+                    formatDate(new Date(d), 'd MMM yyyy', { locale: ar });
+                const msg =
+                    `"${item.productName}" محجوزة في هذه الفترة!\n` +
+                    `فاتورة: ${c.orderCode} — ${c.customerName}\n` +
+                    `من ${dFmt(c.deliveryDate)} إلى ${dFmt(c.returnDate)}`;
+                setConflictWarning(msg);
+                toast({
+                    variant: 'destructive',
+                    title: '⚠️ تعارض في الحجز',
+                    description: `"${item.productName}" مؤجرة بالفعل من ${dFmt(c.deliveryDate)} إلى ${dFmt(c.returnDate)} — فاتورة ${c.orderCode} (${c.customerName}).`,
+                });
+                return;
+            }
+        }
+        setConflictWarning(null);
+    }
+
+    // حساب فرق المبلغ المدفوع (Delta)
+    const paidDelta = isEditMode ? Math.round(paidAmount - (originalOrder?.paid || 0)) : Math.round(paidAmount);
+
+    // إذا كان هناك حركة مالية (دفع جديد أو استرداد)، يجب وجود وردية مفتوحة حالياً
+    if (paidDelta !== 0 && !openShift) {
+        toast({ variant: 'destructive', title: 'لا توجد وردية مفتوحة', description: 'يجب بدء وردية لاستلام أو رد أي مبالغ مالية.' });
+        setShowStartShiftDialog(true);
+        return;
+    }
+
+    // في وضع الإضافة، يجب وجود وردية حتى لو كان المبلغ 0
+    if (!isEditMode && !openShift) {
+        setShowStartShiftDialog(true);
+        return;
+    }
+
+    setIsSaving(true);
+    const startToast = toast({ title: 'جاري الحفظ...', description: 'يتم الآن معالجة بيانات الطلب وتحديث المخزون والمالية.' });
+
+    const nowISO = new Date().toISOString();
+    const preciseOrderDate = orderDate && isValid(new Date(orderDate)) ? new Date(orderDate) : new Date();
+
+    try {
+        let finalOrderCode = order?.orderCode || "";
+
+        if (!isEditMode) {
+            const counterRef = ref(dbRTDB, 'counters/orders');
+            const res = await runTransaction(counterRef, c => { 
+                if (!c) return { value: 70000001 }; 
+                c.value++; 
+                return c; 
+            });
+
+            if (!res.committed || !res.snapshot.exists()) {
+                throw new Error("فشل النظام في توليد رقم فاتورة جديد.");
+            }
+            finalOrderCode = res.snapshot.val().value.toString();
+        }
+
+        const datePath = isEditMode ? (order!.datePath || format(new Date(order!.orderDate), 'yyyy-MM-dd')) : format(new Date(), 'yyyy-MM-dd');
+
+        const cleanedItems = orderItems.filter(i => !!i.productId).map(item => ({
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            priceAtTimeOfOrder: Math.round(item.unitPrice),
+            originalPrice: Math.round(item.originalUnitPrice),
+            itemDiscount: Math.round(item.itemDiscount || 0),
+            productCode: item.productCode,
+            tailorNotes: item.tailorNotes || null,
+            measurements: item.measurements || null,
+            itemTransactionType: item.itemTransactionType || transactionType as any,
+        }));
+
+        const region = regions.find(r => r.id === regionId);
+        const customer = customers.find(c => c.id === customerId);
+
+        const orderData: any = {
+            orderCode: finalOrderCode,
+            branchId,
+            customerId,
+            customerPhone: customer?.primaryPhone || '',
+            regionId: regionId === 'none' ? null : regionId,
+            regionName: region ? region.name : null,
+            transactionType,
+            sellerId,
+            total: totalOrderAmount,
+            paid: paidAmount,
+            remainingAmount,
+            discountAmount: totalDiscounts,
+            // في حالة التعديل، نحافظ على معرف الوردية الأصلي للطلب للبيانات التاريخية
+            shiftId: isEditMode ? (order?.shiftId || null) : (openShift?.id || null),
+            shiftCode: isEditMode ? (order?.shiftCode || null) : (openShift?.shiftCode || null),
+            customerName: customer?.name || '',
+            branchName: branches.find(b => b.id === branchId)?.name || '',
+            sellerName: allUsers.find(u => u.id === sellerId)?.fullName || '',
+            processedByUserId: isEditMode ? (order?.processedByUserId || appUser!.id) : appUser!.id,
+            processedByUserName: isEditMode ? (order?.processedByUserName || appUser!.fullName) : appUser!.fullName,
+            orderDate: preciseOrderDate.toISOString(),
+            deliveryDate: deliveryDate && isValid(new Date(deliveryDate)) ? formatISO(deliveryDate) : null,
+            returnDate: returnDate && isValid(new Date(returnDate)) ? formatISO(returnDate) : null,
+            status: order?.status || 'Pending',
+            items: cleanedItems,
+            updatedAt: nowISO,
+            notes: notes || null,
+            datePath,
+            // الحفاظ على سجل المدفوعات القديم
+            payments: order?.payments || {}
+        };
+
+        // تسجيل الدفعة المالية (الفرق) على الوردية المفتوحة حالياً حصراً
+        if (paidDelta !== 0 && openShift) {
+            const paymentId = isEditMode ? `edit-payment-${Date.now()}` : "initial-payment";
+            const paymentEntry = {
+                id: paymentId,
+                amount: paidDelta,
+                method: paymentMethod,
+                date: nowISO,
+                userId: appUser!.id,
+                userName: appUser!.fullName,
+                shiftId: openShift.id // الوردية الحالية
+            };
+            
+            if (!orderData.payments) orderData.payments = {};
+            orderData.payments[paymentId] = paymentEntry;
+
+            // تحديث الوردية الحالية بالفرق المالي
+            const currentShiftRef = ref(dbRTDB, `shifts/${openShift.id}`);
+            await runTransaction(currentShiftRef, (s) => {
+                if (s) {
+                    const amt = Math.round(paidDelta);
+                    if (paymentMethod === 'Vodafone Cash') s.vodafoneCash = (Number(s.vodafoneCash) || 0) + amt;
+                    else if (paymentMethod === 'InstaPay') s.instaPay = (Number(s.instaPay) || 0) + amt;
+                    else if (paymentMethod === 'Visa') s.visa = (Number(s.visa) || 0) + amt;
+                    else s.cash = (Number(s.cash) || 0) + amt;
+                    
+                    // إذا كان تعديلاً، لا نغير SalesTotal للوردية الحالية إلا إذا كانت هي نفسها وردية الطلب
+                    // (هنا سنعتبر تعديل الإيراد يتبع الوردية الحالية لتبسيط الترحيل المالي)
+                    const totalDelta = totalOrderAmount - (originalOrder?.total || 0);
+                    if (transactionType === 'Sale') s.salesTotal = (Number(s.salesTotal) || 0) + totalDelta;
+                    else s.rentalsTotal = (Number(s.rentalsTotal) || 0) + totalDelta;
+
+                    s.discounts = (Number(s.discounts) || 0) + Math.round(totalDiscounts - (originalOrder?.discountAmount || 0));
+                    s.updatedAt = nowISO;
+                }
+                return s;
+            });
+        }
+
+        if (isImmediateDelivery && transactionType === 'Sale') {
+            orderData.status = 'Delivered to Customer';
+            orderData.deliveryDate = orderData.orderDate;
+            orderData.deliveredAt = nowISO;
+            orderData.deliveryEmployeeId = appUser!.id;
+            orderData.deliveryEmployeeName = appUser!.fullName;
+        }
+
+        // تحديث المخزون
+        for (const newItem of cleanedItems) {
+            const pRef = ref(dbRTDB, `products/${newItem.productId}`);
+            await runTransaction(pRef, p => {
+                if (p) {
+                    if (isEditMode && originalOrder) {
+                        const oldItem = originalOrder.items.find(oi => oi.productId === newItem.productId);
+                        if (oldItem) {
+                            p.quantityInStock = (p.quantityInStock || 0) + oldItem.quantity;
+                            if ((oldItem.itemTransactionType || originalOrder.transactionType) === 'Sale') {
+                                p.quantitySold = Math.max(0, (p.quantitySold || 0) - oldItem.quantity);
+                            } else {
+                                p.quantityRented = Math.max(0, (p.quantityRented || 0) - oldItem.quantity);
+                            }
+                        }
+                    }
+                    p.quantityInStock = (p.quantityInStock || 0) - newItem.quantity;
+                    const itType = newItem.itemTransactionType || transactionType;
+                    if (itType === 'Sale') p.quantitySold = (p.quantitySold || 0) + newItem.quantity;
+                    else {
+                        p.quantityRented = (p.quantityRented || 0) + newItem.quantity;
+                        p.rentalCount = (p.rentalCount || 0) + newItem.quantity;
+                    }
+                    p.updatedAt = nowISO;
+                }
+                return p;
+            });
+        }
+
+        const updates: any = {};
+        if (isEditMode) {
+            updates[`daily-entries/${datePath}/orders/${order!.id}`] = orderData;
+        } else {
+            const newRef = push(ref(dbRTDB, `daily-entries/${datePath}/orders`));
+            orderData.id = newRef.key;
+            updates[`daily-entries/${datePath}/orders/${orderData.id}`] = orderData;
+        }
+        
+        updates[`daily-entries/${datePath}/updatedAt`] = nowISO;
+        await update(ref(dbRTDB), updates);
+
+        startToast.dismiss();
+        if (!isEditMode) {
+            setLastOrder(orderData);
+            setView('success');
+        } else {
+            toast({ title: "تم تحديث الطلب بنجاح" });
+            closeDialog();
+        }
+    } catch (e: any) {
+        console.error("Order Save Error:", e);
+        startToast.dismiss();
+        toast({ variant: 'destructive', title: 'فشل في الحفظ', description: e.message || 'حدث خطأ غير متوقع.' });
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  const handleResetForm = () => {
+    setView('form');
+    setCustomerId(undefined);
+    setOrderItems([]);
+    setPaidAmount(0);
+    setNotes('');
+    setDeliveryDate(undefined);
+    setReturnDate(undefined);
+  };
+
+  if (view === 'success') {
+      return (
+        <div className="flex flex-col items-center justify-center text-center gap-4 py-8">
+            <CheckCircle className="h-16 w-16 text-green-500" />
+            <p className="text-xl font-bold">تم حفظ الطلب بنجاح!</p>
+            <div className="flex flex-col gap-2 text-sm bg-primary/5 border border-primary/20 p-6 rounded-xl w-full max-w-sm">
+                <p className="font-bold text-lg text-primary">رقم الفاتورة: {lastOrder?.orderCode}</p>
+                <Separator className="bg-primary/10 my-1" />
+                <p className="font-medium">العميل: {lastOrder?.customerName}</p>
+                <p className="font-mono">الإجمالي: {lastOrder?.total.toLocaleString()} ج.م</p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4 w-full max-w-sm">
+                {lastOrder && (
+                    <PrintReceipt 
+                        order={lastOrder} 
+                        trigger={<Button className="gap-2 flex-1 h-12 text-lg"><Printer className="h-5 w-5"/> طباعة الإيصال</Button>} 
+                    />
+                )}
+                <Button variant="secondary" className="gap-2 flex-1 h-12 text-lg" onClick={handleResetForm}>
+                    <PlusCircle className="h-5 w-5" />
+                    فاتورة جديدة
+                </Button>
+            </div>
+            <Button variant="ghost" onClick={closeDialog} className="mt-2">العودة للرئيسية</Button>
+        </div>
+      )
+  }
+
+  return (
+    <div className="flex flex-col gap-6 py-4 max-h-[80vh] overflow-y-auto pr-4" dir="rtl">
+        <Card>
+            <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
+                <div className="flex flex-col gap-2">
+                    <Label>الفرع</Label>
+                    <Select value={branchId} onValueChange={setBranchId} disabled={!!appUser?.branchId && appUser.branchId !== 'all'}>
+                        <SelectTrigger><SelectValue placeholder="الفرع" /></SelectTrigger>
+                        <SelectContent>{branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                </div>
+                <div className="flex flex-col gap-2">
+                    <Label>العميل</Label>
+                    <SelectCustomerDialog customers={customers} onCustomerSelected={setCustomerId} selectedCustomerId={customerId} />
+                </div>
+                <div className="flex flex-col gap-2">
+                    <Label className="flex items-center gap-1"><MapPin className="h-3 w-3"/> المنطقة</Label>
+                    <Select value={regionId} onValueChange={setRegionId}>
+                        <SelectTrigger><SelectValue placeholder="اختر المنطقة" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="none">غير محدد</SelectItem>
+                            {regions.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="flex flex-col gap-2">
+                    <Label>المعاملة</Label>
+                    <Select value={transactionType} onValueChange={setTransactionType}>
+                        <SelectTrigger><SelectValue placeholder="النوع" /></SelectTrigger>
+                        <SelectContent><SelectItem value="Rental">إيجار</SelectItem><SelectItem value="Sale">بيع</SelectItem></SelectContent>
+                    </Select>
+                </div>
+                <div className="flex flex-col gap-2">
+                    <Label>البائع</Label>
+                    <Select value={sellerId} onValueChange={setSellerId}>
+                        <SelectTrigger><SelectValue placeholder="اختر البائع"/></SelectTrigger>
+                        <SelectContent>{allUsers.filter(u => u.isActive).map(u => <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>)}</SelectContent>
+                    </Select>
+                </div>
+                {transactionType === 'Sale' && !isEditMode && (
+                    <div className="flex items-center space-x-2 space-x-reverse border rounded-md p-2 bg-primary/5 border-primary/20">
+                        <Switch id="immediate-delivery" checked={isImmediateDelivery} onCheckedChange={setIsImmediateDelivery} />
+                        <Label htmlFor="immediate-delivery" className="font-bold cursor-pointer">تسليم فوري</Label>
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+
+        <Card>
+            <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
+                <div className="flex flex-col gap-2">
+                    <Label>تاريخ الطلب</Label>
+                    <DatePickerDialog value={orderDate} onValueChange={setOrderDate} />
+                </div>
+                {!isImmediateDelivery && (
+                    <div className="flex flex-col gap-2">
+                        <Label>تاريخ التسليم</Label>
+                        <DatePickerDialog value={deliveryDate} onValueChange={setDeliveryDate} fromDate={orderDate} />
+                    </div>
+                )}
+                {transactionType === 'Rental' && (
+                    <div className="flex flex-col gap-2">
+                        <Label>تاريخ الإرجاع</Label>
+                        <DatePickerDialog value={returnDate} onValueChange={setReturnDate} fromDate={deliveryDate || orderDate} />
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+
+        <Card>
+            <CardHeader>
+                <div className='flex items-center justify-between'>
+                    <CardTitle className="text-sm">أصناف الطلب</CardTitle>
+                    {isProductsLoading && <div className='flex items-center gap-1 text-[10px] text-primary animate-pulse'><Database className='h-3 w-3'/> جاري تحميل الأصناف...</div>}
+                </div>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+                {orderItems.map(item => (
+                    <div key={item.id} className="flex flex-col gap-3 border-b pb-4">
+                        <div className="grid grid-cols-12 gap-2 items-end">
+                            <div className="col-span-12 lg:col-span-3">
+                                {!branchId ? (
+                                    <div className='p-3 rounded-md bg-muted text-[10px] text-destructive flex items-center gap-2 border border-destructive/20'>
+                                        <MapPin className='h-3 w-3' />
+                                        <span>يجب اختيار الفرع أولاً</span>
+                                    </div>
+                                ) : (
+                                    <>
+                                    <SelectProductDialog
+                                        products={availableProducts}
+                                        bookedProductIds={bookedProductIds}
+                                        onProductSelected={p => {
+                                            const prod = cachedProducts.find(x => x.id === p);
+                                            if(prod) {
+                                                const itType = (prod.category === 'both' ? (transactionType as any || 'Rental') : (prod.category === 'sale' ? 'Sale' : 'Rental'));
+                                                const initialPrice = itType === 'Sale' ? (Number(prod.salePrice) || Number(prod.price)) : (Number(prod.rentalPrice) || Number(prod.price));
+                                                handleUpdateItem(item.id, { 
+                                                    productId: prod.id, 
+                                                    productName: `${prod.name} - ${prod.size}`, 
+                                                    transactionBasePrice: initialPrice,
+                                                    originalUnitPrice: initialPrice,
+                                                    productCode: prod.productCode,
+                                                    productCategory: prod.category,
+                                                    itemTransactionType: itType,
+                                                    salePrice: Number(prod.salePrice) || Number(prod.price) || 0,
+                                                    rentalPrice: Number(prod.rentalPrice) || 0
+                                                });
+                                            }
+                                        }}
+                                        selectedProductId={item.productId}
+                                        disabled={!branchId || isProductsLoading}
+                                    />
+                                    {/* تحذير مرئي إذا كان الصنف المختار محجوزاً */}
+                                    {item.productId && bookedProductIds.has(item.productId) && (
+                                        <div className="flex items-center gap-2 mt-1 px-2 py-1.5 rounded-md bg-destructive/10 border border-destructive/30 text-destructive text-xs">
+                                            <CalendarX2 className="h-3.5 w-3.5 shrink-0" />
+                                            <span>هذه القطعة <strong>محجوزة</strong> في فترة التسليم والإرجاع المحددة — لن يمكن حفظ الطلب</span>
+                                        </div>
+                                    )}
+                                    </>
+                                )}
+                            </div>
+                            <div className="col-span-3 lg:col-span-2">
+                                <Label className="text-[10px]">طبيعة العمل</Label>
+                                <Select 
+                                    value={item.itemTransactionType || undefined} 
+                                    onValueChange={(v: any) => handleUpdateItem(item.id, { itemTransactionType: v })}
+                                    disabled={!item.productId || item.productCategory !== 'both'}
+                                >
+                                    <SelectTrigger className="h-10 text-[10px]"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="Rental">إيجار</SelectItem>
+                                        <SelectItem value="Sale">بيع</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="col-span-2 lg:col-span-1">
+                                <Label className="text-[10px]">الكمية</Label>
+                                <Input type="number" value={item.quantity} onChange={e => handleUpdateItem(item.id, { quantity: parseInt(e.target.value) || 1 })} />
+                            </div>
+                            <div className="col-span-3 lg:col-span-2">
+                                <Label className="text-[10px] text-primary">سعر المعاملة</Label>
+                                <Input type="number" value={item.transactionBasePrice} onChange={e => handleUpdateItem(item.id, { transactionBasePrice: parseFloat(e.target.value) || 0 })} />
+                            </div>
+                            <div className="col-span-2 lg:col-span-1">
+                                <Label className="text-[10px] text-green-600">الخصم (للخط)</Label>
+                                <Input type="number" value={item.itemDiscount} onChange={e => handleUpdateItem(item.id, { itemDiscount: parseFloat(e.target.value) || 0 })} />
+                            </div>
+                            <div className="col-span-3 lg:col-span-2">
+                                <Label className="text-[10px] text-blue-600 flex items-center gap-1"><Calculator className="h-2.5 w-2.5"/> صافي السطر</Label>
+                                <Input value={Math.round(item.totalPrice).toLocaleString()} readOnly className="bg-muted font-bold text-blue-600" />
+                            </div>
+                            <div className="col-span-1 lg:col-span-1 flex justify-center">
+                                <Button variant="destructive" size="icon" onClick={() => setOrderItems(prev => prev.filter(i => i.id !== item.id))}><Trash2 className="h-4 w-4"/></Button>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                            <div className="space-y-1">
+                                <Label className="text-[10px] flex items-center gap-1"><Ruler className="h-3 w-3 text-muted-foreground"/> القياسات (اختياري)</Label>
+                                <Input 
+                                    placeholder="الصدر، الخصر، الطول..." 
+                                    value={item.measurements || ''} 
+                                    onChange={e => handleUpdateItem(item.id, { measurements: e.target.value })}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-[10px] flex items-center gap-1"><Scissors className="h-3 w-3 text-muted-foreground"/> ملاحظات الخياط / التعديلات</Label>
+                                <Input 
+                                    placeholder="تضييق، تقصير، تغيير أزرار..." 
+                                    value={item.tailorNotes || ''} 
+                                    onChange={e => handleUpdateItem(item.id, { tailorNotes: e.target.value })}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                ))}
+                <Button variant="outline" onClick={() => setOrderItems(prev => [...prev, { id: Date.now().toString(), productId: '', productName: '', quantity: 1, transactionBasePrice: 0, unitPrice: 0, originalUnitPrice: 0, itemDiscount: 0, totalPrice: 0, productCode: '' }])}>إضافة صنف</Button>
+            </CardContent>
+        </Card>
+
+        <Card>
+            <CardContent className="space-y-4 pt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label>المبلغ المدفوع</Label>
+                        <Input type="number" value={paidAmount} onChange={e => setPaidAmount(parseFloat(e.target.value) || 0)} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>طريقة الدفع</Label>
+                        <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                            <SelectTrigger><SelectValue/></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="Cash">نقداً (Cash)</SelectItem>
+                                <SelectItem value="Vodafone Cash">فودافون كاش</SelectItem>
+                                <SelectItem value="InstaPay">إنستا باي (InstaPay)</SelectItem>
+                                <SelectItem value="Visa">فيزا (Visa)</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                <div className="space-y-2">
+                    <Label className="flex items-center gap-1"><FileText className="h-4 w-4 text-muted-foreground"/> ملاحظات إضافية على الطلب</Label>
+                    <Textarea 
+                        value={notes} 
+                        onChange={e => setNotes(e.target.value)} 
+                        placeholder="أي تفاصيل أخرى تخص الطلب أو العميل..."
+                        rows={3}
+                    />
+                </div>
+                <Separator />
+                <div className="flex flex-col gap-2 bg-muted/20 p-4 rounded-lg">
+                    <div className="flex justify-between text-sm">
+                        <span>إجمالي الخصومات:</span>
+                        <span className="font-mono text-green-600">-{totalDiscounts.toLocaleString()} ج.م</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-lg text-primary border-t border-primary/20 pt-2">
+                        <span>الصافي المطلوب:</span>
+                        <span className="font-mono">{totalOrderAmount.toLocaleString()} ج.م</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                        <span>المدفوع:</span>
+                        <span className="font-mono text-blue-600">{paidAmount.toLocaleString()} ج.م</span>
+                    </div>
+                    <div className={cn("flex justify-between font-black text-xl border-t pt-2", remainingAmount > 0 ? "text-destructive" : "text-green-600")}>
+                        <span>المتبقي:</span>
+                        <span className="font-mono">{remainingAmount.toLocaleString()} ج.م</span>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+        {/* تحذير تعارض الحجز */}
+        {conflictWarning && (
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/40 text-destructive text-sm">
+                <CalendarX2 className="h-5 w-5 shrink-0 mt-0.5" />
+                <div className="whitespace-pre-line leading-relaxed">{conflictWarning}</div>
+            </div>
+        )}
+        {bookedProductIds.size > 0 && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>يوجد <strong>{bookedProductIds.size}</strong> صنف محجوز في الفترة المحددة — مُعلَّم باللون الأحمر في قائمة الاختيار</span>
+            </div>
+        )}
+        <Button onClick={handleSaveOrder} className="w-full h-12 text-lg font-bold gap-2" disabled={isSaving}>
+            {isSaving ? <Loader2 className="h-5 w-5 animate-spin ml-2" /> : null}
+            {isEditMode ? 'تحديث بيانات الطلب' : 'حفظ الطلب'}
+        </Button>
+    </div>
+  );
+}
+
+export function NewOrderDialog({ trigger, order, productId, open: externalOpen, onOpenChange: externalOnOpenChange }: any) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  
+  const setOpen = (val: boolean) => {
+      if (externalOnOpenChange) externalOnOpenChange(val);
+      else setInternalOpen(val);
+
+      if (!val) {
+        setTimeout(() => {
+          document.body.style.pointerEvents = 'auto';
+          document.body.style.overflow = '';
+          // Ensure any stuck overlays are cleared
+          document.querySelectorAll('[data-radix-overlay]').forEach(el => (el as HTMLElement).style.display = 'none');
+        }, 100);
+      }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent className="max-w-5xl">
+        <DialogHeader>
+            <DialogTitle className="text-right">{order ? `تعديل طلب ${order.orderCode}` : 'إنشاء طلب جديد'}</DialogTitle>
+        </DialogHeader>
+        {open && <NewOrderDialogInner order={order} initialProductId={productId} closeDialog={() => setOpen(false)} />}
+      </DialogContent>
+    </Dialog>
+  );
+}

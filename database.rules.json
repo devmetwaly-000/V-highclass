@@ -1,0 +1,82 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": true,
+
+    "products": {
+      ".indexOn": ["name", "productCode", "category", "group", "size", "branchId", "updatedAt", "createdAt"]
+    },
+
+    "customers": {
+      ".indexOn": ["name", "primaryPhone", "updatedAt"]
+    },
+
+    "branches": {
+      ".indexOn": ["name", "updatedAt"]
+    },
+
+    "users": {
+      ".indexOn": ["username", "role", "branchId", "updatedAt"]
+    },
+
+    "shifts": {
+      ".indexOn": ["cashierId", "startTime", "updatedAt", "isPosted"]
+    },
+
+    "expenses": {
+      ".indexOn": ["branchId", "category", "date", "updatedAt", "shiftId", "treasuryId"]
+    },
+
+    "daily-entries": {
+      "$date": {
+        "orders": {
+          ".indexOn": ["updatedAt", "orderDate", "status", "cashierId", "branchId", "transactionType"]
+        }
+      }
+    },
+
+    "discountRequests": {
+      ".indexOn": ["status", "branchId", "updatedAt"]
+    },
+
+    "suppliers": {
+      ".indexOn": ["name", "phone", "updatedAt"]
+    },
+
+    "purchaseOrders": {
+      ".indexOn": ["purchaseOrderCode", "supplierId", "purchaseDate", "updatedAt"]
+    },
+
+    "saleReturns": {
+      ".indexOn": ["returnCode", "orderCode", "returnDate", "updatedAt"]
+    },
+
+    "regions": {
+      ".indexOn": ["name", "updatedAt"]
+    },
+
+    "treasuries": {
+      ".indexOn": ["name", "branchId", "updatedAt"]
+    },
+
+    "productGroups": {
+      ".indexOn": ["name", "updatedAt"]
+    },
+
+    "sizes": {
+      ".indexOn": ["name", "updatedAt"]
+    },
+
+    "settings": {
+      ".indexOn": ["updatedAt"]
+    },
+
+    "counters": {
+      ".indexOn": ["value"]
+    },
+
+    "saleReturns": {
+      ".indexOn": ["returnCode", "orderCode", "returnDate", "updatedAt", "branchId"]
+    }
+  }
+}

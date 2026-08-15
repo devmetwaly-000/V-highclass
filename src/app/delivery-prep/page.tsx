@@ -1,0 +1,444 @@
+'use client';
+
+import React, { useState, useMemo } from 'react';
+import {
+  Truck,
+  Calendar as CalendarIcon,
+  Filter,
+  Eye,
+  Scissors,
+  PackageCheck,
+  PackageSearch,
+  Wrench,
+  DollarSign,
+  UserCheck,
+  RotateCcw,
+} from 'lucide-react';
+import { PageHeader } from '@/components/page-header';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
+import { format, addDays, startOfDay, endOfDay } from 'date-fns';
+import type { Order, Branch, User } from '@/lib/definitions';
+import Link from 'next/link';
+import { useRtdbList } from '@/hooks/use-rtdb';
+import { useUser, useDatabase } from '@/firebase';
+import { ref, update } from 'firebase/database';
+import { useToast } from '@/hooks/use-toast';
+import { Skeleton } from '@/components/ui/skeleton';
+import { AddPaymentDialog } from '@/components/add-payment-dialog';
+import { PrintTailorReceiptDialog } from '@/components/print-tailor-receipt-dialog';
+import { AppLayout } from '@/components/app-layout';
+import { OrderDetailsDialog } from '@/components/order-details-dialog';
+import { useSettings } from '@/hooks/use-settings';
+import { usePermissions } from '@/hooks/use-permissions';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+function getOrderSummary(items: Order['items']) {
+    if (!items || items.length === 0) return '-';
+    const firstItem = items[0];
+    const summary = `${firstItem.productName}`;
+    return items.length > 1 ? `${summary} و ${items.length - 1} آخرون` : summary;
+}
+
+function formatDate(dateString?: string | Date) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+     if (isNaN(date.getTime())) {
+        return '-'
+    }
+    return format(date, "d MMMM yyyy");
+}
+
+
+function DeliveryPrepPageContent() {
+  const [fromDate, setFromDate] = useState<Date | undefined>(addDays(new Date(), -30));
+  const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 30));
+  const [selectedBranch, setSelectedBranch] = useState('all');
+  
+  const [deliveringOrder, setDeliveringOrder] = useState<Order | null>(null);
+  const [deliveryEmployeeId, setDeliveryEmployeeId] = useState<string>('');
+  
+  const { appUser } = useUser();
+  const db = useDatabase();
+  const { toast } = useToast();
+  const { settings, isLoading: isLoadingSettings } = useSettings();
+  const { data: allOrders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+  const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
+  const { data: users } = useRtdbList<User>('users');
+  const { permissions, isLoading: isLoadingPermissions } = usePermissions(['orders:add-payment'] as const);
+
+  const isLoading = isLoadingOrders || isLoadingBranches || isLoadingSettings || isLoadingPermissions;
+  
+  const filteredOrders = useMemo(() => {
+    if (isLoading) return [];
+
+    const start = fromDate ? startOfDay(fromDate) : null;
+    const end = toDate ? endOfDay(toDate) : null;
+
+    return allOrders.filter(order => {
+        if (order.status === 'Cancelled' || order.status === 'Returned') return false;
+        if (!order.deliveryDate) return false;
+        
+        const deliveryDate = new Date(order.deliveryDate);
+        const dateMatch = (!start || deliveryDate >= start) && (!end || deliveryDate <= end);
+        
+        let branchMatch = selectedBranch === 'all';
+        if (appUser?.branchId && appUser.branchId !== 'all') {
+            branchMatch = order.branchId === appUser.branchId;
+        } else if (selectedBranch !== 'all') {
+            branchMatch = order.branchId === selectedBranch;
+        }
+
+        return dateMatch && branchMatch;
+    });
+  }, [allOrders, fromDate, toDate, selectedBranch, appUser, isLoading]);
+
+
+  const { pendingOrders, readyOrders, fromTailorOrders } = useMemo(() => {
+    const pending: Order[] = [];
+    const ready: Order[] = [];
+    const fromTailor: Order[] = [];
+
+    filteredOrders.forEach(order => {
+        if (order.status === 'Pending') pending.push(order);
+        else if (order.status === 'Ready for Pickup') ready.push(order);
+        else if (order.status === 'Returned from Tailor') fromTailor.push(order);
+    });
+
+    return { pendingOrders: pending, readyOrders: ready, fromTailorOrders: fromTailor };
+  }, [filteredOrders]);
+
+  const updateOrderStatus = async (order: Order, newStatus: string, deliveryData?: any) => {
+    if (!db || !order.id) return;
+    
+    const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
+    const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
+    
+    try {
+        const updates: any = { status: newStatus, updatedAt: new Date().toISOString() };
+        if (deliveryData) {
+            updates.deliveryEmployeeId = deliveryData.id;
+            updates.deliveryEmployeeName = deliveryData.name;
+            updates.deliveredAt = new Date().toISOString();
+        }
+
+        await update(orderRef, updates);
+        toast({
+            title: 'تم تحديث الحالة',
+            description: `تم تحديث حالة الطلب ${order.orderCode} بنجاح.`
+        });
+    } catch(error: any) {
+        console.error("Update Order Status Error:", error);
+        toast({
+            variant: 'destructive',
+            title: 'خطأ في التحديث',
+            description: error.message
+        });
+    }
+  };
+
+  const handleConfirmDelivery = () => {
+      if (!deliveringOrder || !deliveryEmployeeId) return;
+      const employee = users.find(u => u.id === deliveryEmployeeId);
+      if (employee) {
+          updateOrderStatus(deliveringOrder, 'Delivered to Customer', { id: employee.id, name: employee.fullName });
+          setDeliveringOrder(null);
+          setDeliveryEmployeeId('');
+      }
+  };
+
+  return (
+    <div className="flex flex-col gap-8">
+      <PageHeader title="إدارة طلبات التجهيز والتسليم" showBackButton />
+
+      <Dialog open={!!deliveringOrder} onOpenChange={(val) => !val && setDeliveringOrder(null)}>
+          <DialogContent className="sm:max-w-md" dir="rtl">
+              <DialogHeader>
+                  <DialogTitle className="text-right flex items-center gap-2">
+                      <UserCheck className="h-5 w-5 text-primary" />
+                      اختيار موظف التسليم
+                  </DialogTitle>
+                  <DialogDescription className="text-right">
+                      يرجى اختيار الموظف الذي سيقوم بتسليم الطلب {deliveringOrder?.orderCode} للعميل.
+                  </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                  <Label>موظف التسليم</Label>
+                  <Select value={deliveryEmployeeId} onValueChange={setDeliveryEmployeeId}>
+                      <SelectTrigger className="mt-2 h-12">
+                          <SelectValue placeholder="اختر الموظف..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                          {users.filter(u => u.isActive).map(u => (
+                              <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
+                          ))}
+                      </SelectContent>
+                  </Select>
+              </div>
+              <DialogFooter className="gap-2">
+                  <Button variant="outline" onClick={() => setDeliveringOrder(null)} className="flex-1">إلغاء</Button>
+                  <Button onClick={handleConfirmDelivery} disabled={!deliveryEmployeeId} className="flex-1 bg-green-600 hover:bg-green-700">تأكيد التسليم</Button>
+              </DialogFooter>
+          </DialogContent>
+      </Dialog>
+
+      <Card>
+        <CardHeader>
+            <div className="flex items-center gap-2">
+                <Filter className="h-5 w-5 text-primary" />
+                <CardTitle>فلترة طلبات التجهيز والتسليم</CardTitle>
+            </div>
+            <CardDescription>يتم عرض الطلبات بناءً على "تاريخ التسليم" المجدد في الفاتورة.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label>من تاريخ تسليم</Label>
+                 <DatePickerDialog
+                    value={fromDate}
+                    onValueChange={setFromDate}
+                 />
+            </div>
+             <div className="flex flex-col gap-2">
+                <Label>إلى تاريخ تسليم</Label>
+                 <DatePickerDialog
+                    value={toDate}
+                    onValueChange={setToDate}
+                 />
+            </div>
+            <div className="flex flex-col gap-2">
+                 <Label>الفرع</Label>
+                 <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isLoadingBranches || (!!appUser?.branchId && appUser.branchId !== 'all')}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="اختر الفرع" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">كل الفروع</SelectItem>
+                        {branches.map(branch => (
+                            <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                 </Select>
+            </div>
+        </CardContent>
+      </Card>
+
+        <Card>
+            <CardHeader>
+                <div className="flex items-center gap-2">
+                    <PackageSearch className="h-6 w-6 text-primary" />
+                    <div>
+                        <CardTitle>طلبات قيد التجهيز</CardTitle>
+                        <CardDescription>الطلبات التي تحتاج إلى تجهيزها للتسليم في الفترة المحددة.</CardDescription>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="text-center">كود الطلب</TableHead>
+                            <TableHead className="text-right">العميل</TableHead>
+                            <TableHead className="text-right">الأصناف</TableHead>
+                            <TableHead className="text-right">الفرع</TableHead>
+                            <TableHead className="text-center">تاريخ التسليم</TableHead>
+                             <TableHead className="text-center">الحالة</TableHead>
+                            <TableHead className="w-[200px] text-center">الإجراءات</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {isLoading ? [...Array(3)].map((_, i) => (
+                             <TableRow key={i}>
+                                {[...Array(7)].map((_, j) => <TableCell key={j}><Skeleton className="h-8 w-full" /></TableCell>)}
+                            </TableRow>
+                        )) : pendingOrders.length === 0 ? (
+                             <TableRow>
+                                <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
+                                    لا توجد طلبات لتجهيزها للفترة والفرع المحددين.
+                                </TableCell>
+                            </TableRow>
+                        ) : pendingOrders.map(order => (
+                             <TableRow key={order.id}>
+                                <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
+                                <TableCell className="text-right">{order.customerName}</TableCell>
+                                <TableCell className="text-right font-medium">{getOrderSummary(order.items)}</TableCell>
+                                <TableCell className="text-right">{order.branchName}</TableCell>
+                                <TableCell className="text-center">{formatDate(order.deliveryDate)}</TableCell>
+                                <TableCell className="text-center"><Badge variant="destructive">قيد التجهيز</Badge></TableCell>
+                                 <TableCell className="text-center">
+                                    <div className="flex gap-2 justify-center">
+                                        <Button size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Ready for Pickup')}><Wrench className="h-4 w-4"/> تجهيز</Button>
+                                        <OrderDetailsDialog orderId={order.id} order={order}>
+                                            <Button variant="ghost" size="sm" className="gap-1.5"><Eye className="h-4 w-4"/> عرض</Button>
+                                        </OrderDetailsDialog>
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </CardContent>
+        </Card>
+
+        {settings.feature_enableTailorWorkflow && (
+          <Card>
+              <CardHeader>
+                  <div className="flex items-center gap-2">
+                      <Scissors className="h-6 w-6 text-primary" />
+                      <div>
+                          <CardTitle>طلبات عند الخياط</CardTitle>
+                          <CardDescription>الطلبات التي تم إرسالها للخياط للتعديل.</CardDescription>
+                      </div>
+                  </div>
+              </CardHeader>
+               <CardContent className="p-0 overflow-x-auto">
+                  <Table>
+                      <TableHeader>
+                           <TableRow>
+                              <TableHead className="text-center">كود الطلب</TableHead>
+                              <TableHead className="text-right">العميل</TableHead>
+                              <TableHead className="text-right">المنتج</TableHead>
+                              <TableHead className="text-right">الفرع</TableHead>
+                              <TableHead className="text-center">تاريخ التسليم</TableHead>
+                              <TableHead className="text-center">الحالة</TableHead>
+                              <TableHead className="w-[340px] text-center">الإجراءات</TableHead>
+                          </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                           {isLoading ? [...Array(1)].map((_, i) => (
+                               <TableRow key={i}>
+                                  {[...Array(7)].map((_, j) => <TableCell key={j}><Skeleton className="h-8 w-full" /></TableCell>)}
+                              </TableRow>
+                          )) : fromTailorOrders.length === 0 ? (
+                               <TableRow>
+                                  <TableCell colSpan={7} className="text-center h-24 text-muted-foreground">
+                                      لا توجد طلبات عند الخياط حاليًا.
+                                  </TableCell>
+                              </TableRow>
+                          ) : fromTailorOrders.map(order => (
+                              <TableRow key={order.id}>
+                                  <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
+                                  <TableCell className="text-right">{order.customerName}</TableCell>
+                                  <TableCell className="text-right font-medium">{getOrderSummary(order.items)}</TableCell>
+                                  <TableCell className="text-right">{order.branchName}</TableCell>
+                                  <TableCell className="text-center">{formatDate(order.deliveryDate)}</TableCell>
+                                  <TableCell className="text-center"><Badge className="bg-purple-500 text-white">عند الخياط</Badge></TableCell>
+                                  <TableCell className="text-center">
+                                      <div className="flex gap-2 justify-center">
+                                          <Button size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Ready for Pickup')}><PackageCheck className="h-4 w-4"/> استلام</Button>
+                                          <PrintTailorReceiptDialog order={order} trigger={
+                                              <Button variant="outline" size="sm" className="gap-1.5">وصل</Button>
+                                          } />
+                                          <OrderDetailsDialog orderId={order.id} order={order}>
+                                              <Button variant="ghost" size="sm" className="gap-1.5"><Eye className="h-4 w-4"/> عرض</Button>
+                                          </OrderDetailsDialog>
+                                      </div>
+                                  </TableCell>
+                              </TableRow>
+                          ))}
+                      </TableBody>
+                  </Table>
+              </CardContent>
+          </Card>
+        )}
+
+
+        <Card>
+            <CardHeader>
+                <div className="flex items-center gap-2">
+                    <PackageCheck className="h-6 w-6 text-primary" />
+                    <div>
+                        <CardTitle>طلبات جاهزة للتسليم</CardTitle>
+                        <CardDescription>الطلبات التي تم تجهيزها وهي جاهزة للتسليم للعميل.</CardDescription>
+                    </div>
+                </div>
+            </CardHeader>
+             <CardContent className="p-0 overflow-x-auto">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="text-center">كود الطلب</TableHead>
+                            <TableHead className="text-right">العميل</TableHead>
+                            <TableHead className="text-right">المنتج</TableHead>
+                            <TableHead className="text-right">الفرع</TableHead>
+                            <TableHead className="text-center">تاريخ التسليم</TableHead>
+                            <TableHead className="text-center">المبلغ المتبقي</TableHead>
+                            <TableHead className="text-center">الحالة</TableHead>
+                            <TableHead className="w-[450px] text-center">الإجراءات</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {isLoading ? [...Array(2)].map((_, i) => (
+                             <TableRow key={i}>
+                                {[...Array(8)].map((_, j) => <TableCell key={j}><Skeleton className="h-8 w-full" /></TableCell>)}
+                            </TableRow>
+                        )) : readyOrders.length === 0 ? (
+                             <TableRow>
+                                <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
+                                    لا توجد طلبات جاهزة للتسليم حاليًا.
+                                </TableCell>
+                            </TableRow>
+                        ) : readyOrders.map(order => (
+                            <TableRow key={order.id}>
+                                <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
+                                <TableCell className="text-right">{order.customerName}</TableCell>
+                                <TableCell className="text-right font-medium">{getOrderSummary(order.items)}</TableCell>
+                                <TableCell className="text-right">{order.branchName}</TableCell>
+                                <TableCell className="text-center">{formatDate(order.deliveryDate)}</TableCell>
+                                <TableCell className={cn("text-center font-mono font-semibold", order.remainingAmount > 0 ? 'text-destructive' : 'text-green-600')}>{order.remainingAmount.toLocaleString()} ج.م</TableCell>
+                                <TableCell className="text-center"><Badge className="bg-yellow-500 text-black">جاهز</Badge></TableCell>
+                                <TableCell className="text-center">
+                                    <div className="flex gap-2 justify-center">
+                                         {order.remainingAmount > 0 && permissions.canOrdersAddPayment && (
+                                            <AddPaymentDialog order={order} trigger={
+                                                <Button size="sm" className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"><DollarSign className="h-4 w-4"/> دفع</Button>
+                                            }/>
+                                        )}
+                                        <OrderDetailsDialog orderId={order.id} order={order}>
+                                            <Button variant="ghost" size="sm" className="gap-1.5"><Eye className="h-4 w-4"/> عرض</Button>
+                                        </OrderDetailsDialog>
+                                        <Button size="sm" className="gap-1.5" onClick={() => setDeliveringOrder(order)} disabled={order.remainingAmount > 0}><Truck className="h-4 w-4"/> تسليم</Button>
+                                        {settings.feature_enableTailorWorkflow && (
+                                          <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => updateOrderStatus(order, 'Returned from Tailor')}><Scissors className="h-4 w-4"/> للخياط</Button>
+                                        )}
+                                        <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => updateOrderStatus(order, 'Pending')}>
+                                          <RotateCcw className="h-4 w-4"/> تراجع للتجهيز
+                                        </Button>
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </CardContent>
+        </Card>
+    </div>
+  );
+}
+
+export default function DeliveryPrepPage() {
+    return (
+        <AppLayout>
+            <DeliveryPrepPageContent />
+        </AppLayout>
+    )
+}
