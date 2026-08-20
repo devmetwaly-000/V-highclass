@@ -57,11 +57,10 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
     if (open) {
       if (appUser && !inspectorId) setInspectorId(appUser.id);
       
-      // تهيئة الكميات بناءً على ما تبقى عند العميل من الأصناف المؤجرة فقط
+      // تهيئة الكميات بـ 0 لفرض الإدخال اليدوي ومنع الاستلام الكامل بالخطأ
       const initial: Record<string, number> = {};
       rentalItems.forEach(item => {
-          const left = item.quantity - (item.returnedQuantity || 0);
-          initial[item.productId] = Math.max(0, left);
+          initial[item.productId] = 0;
       });
       setReturningQuantities(initial);
     }
@@ -99,54 +98,58 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
       const nowISO = new Date().toISOString();
       const timestamp = format(new Date(), 'dd/MM/yyyy hh:mm a');
       
-      let allRentalsReturned = true;
-      const updatedItems = [...order.items];
-
-      // تحديث كل صنف مؤجر تم استلامه
-      for (let i = 0; i < updatedItems.length; i++) {
-        const item = updatedItems[i];
+      // إنشاء نسخة جديدة من الأصناف وتحديث الكميات المرتجعة
+      const updatedItems = order.items.map(item => {
         const isRental = (item.itemTransactionType || order.transactionType) === 'Rental';
+        if (!isRental) return item;
+
+        const qtyToReturnNow = returningQuantities[item.productId] || 0;
+        const alreadyReturned = item.returnedQuantity || 0;
         
-        if (isRental) {
-            const qtyToReturnNow = returningQuantities[item.productId] || 0;
-            const alreadyReturned = item.returnedQuantity || 0;
-            
-            // تحديث التتبع المحلي
-            item.returnedQuantity = alreadyReturned + qtyToReturnNow;
-            
-            if (item.returnedQuantity < item.quantity) {
-                allRentalsReturned = false;
-            }
+        return {
+            ...item,
+            returnedQuantity: alreadyReturned + qtyToReturnNow
+        };
+      });
 
-            if (qtyToReturnNow > 0) {
-                const productRef = ref(db, `products/${item.productId}`);
-                await runTransaction(productRef, (currentProduct: Product) => {
-                    if (currentProduct) {
-                        const quantityBefore = currentProduct.quantityInStock || 0;
-                        currentProduct.quantityInStock = quantityBefore + qtyToReturnNow;
-                        currentProduct.quantityRented = Math.max(0, (currentProduct.quantityRented || 0) - qtyToReturnNow);
+      // التحقق هل تم إرجاع كافة الأصناف المؤجرة؟
+      const allRentalsReturned = updatedItems.every(item => {
+          const isRental = (item.itemTransactionType || order.transactionType) === 'Rental';
+          if (!isRental) return true;
+          return (item.returnedQuantity || 0) >= item.quantity;
+      });
 
-                        const movementRef = push(ref(db, `products/${item.productId}/stockMovements`));
-                        const newMovement: StockMovement = {
-                            id: movementRef.key!,
-                            date: nowISO,
-                            type: 'rental_in',
-                            quantity: qtyToReturnNow,
-                            quantityBefore: quantityBefore,
-                            quantityAfter: currentProduct.quantityInStock,
-                            notes: `إرجاع ${qtyToReturnNow} قطعة من طلب ${order.orderCode} (الحالة: ${condition === 'good' ? 'جيد' : 'تالف'})`,
-                            orderCode: order.orderCode,
-                            userId: appUser.id,
-                            userName: appUser.fullName,
-                        };
-                        if (!currentProduct.stockMovements) currentProduct.stockMovements = {};
-                        currentProduct.stockMovements[newMovement.id] = newMovement;
-                        currentProduct.updatedAt = nowISO;
-                    }
-                    return currentProduct;
-                });
-            }
-        }
+      // معالجة حركة المخزون للأصناف المستلمة "الآن" فقط
+      for (const item of order.items) {
+          const qtyToReturnNow = returningQuantities[item.productId] || 0;
+          if (qtyToReturnNow > 0) {
+              const productRef = ref(db, `products/${item.productId}`);
+              await runTransaction(productRef, (currentProduct: Product) => {
+                  if (currentProduct) {
+                      const quantityBefore = currentProduct.quantityInStock || 0;
+                      currentProduct.quantityInStock = quantityBefore + qtyToReturnNow;
+                      currentProduct.quantityRented = Math.max(0, (currentProduct.quantityRented || 0) - qtyToReturnNow);
+
+                      const movementRef = push(ref(db, `products/${item.productId}/stockMovements`));
+                      const newMovement: StockMovement = {
+                          id: movementRef.key!,
+                          date: nowISO,
+                          type: 'rental_in',
+                          quantity: qtyToReturnNow,
+                          quantityBefore: quantityBefore,
+                          quantityAfter: currentProduct.quantityInStock,
+                          notes: `إرجاع ${qtyToReturnNow} قطعة من طلب ${order.orderCode} (الحالة: ${condition === 'good' ? 'جيد' : 'تالف'})`,
+                          orderCode: order.orderCode,
+                          userId: appUser.id,
+                          userName: appUser.fullName,
+                      };
+                      if (!currentProduct.stockMovements) currentProduct.stockMovements = {};
+                      currentProduct.stockMovements[newMovement.id] = newMovement;
+                      currentProduct.updatedAt = nowISO;
+                  }
+                  return currentProduct;
+              });
+          }
       }
 
       // تحضير سجل الملاحظات
@@ -182,7 +185,7 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
         title: allRentalsReturned ? "تم اكتمال إرجاع الطلب" : "تم الاستلام الجزئي",
         description: allRentalsReturned 
             ? `تم إرجاع كافة الأصناف لطلب ${order.orderCode} بنجاح.` 
-            : `تم استلام ${totalToReturn} قطعة، ويتبقى أصناف أخرى بالطلب.`
+            : `تم استلام ${totalToReturn} قطعة، وبانتظار المتبقي.`
       });
       
       setOpen(false);
@@ -206,20 +209,19 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
             استلام وفحص مرتجع - {order.orderCode}
           </DialogTitle>
           <DialogDescription className="text-right">
-            حدد الأصناف والكميات (المؤجرة فقط) التي يتم استلامها حالياً من العميل {order.customerName}.
+            حدد الكميات التي يتم استلامها "الآن" من العميل {order.customerName}.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-6 py-4">
-          {/* جدول المرتجعات */}
           <div className="rounded-lg border overflow-hidden">
              <Table>
                 <TableHeader className="bg-muted/50">
                     <TableRow>
                         <TableHead className="text-right text-xs">الصنف المؤجر</TableHead>
                         <TableHead className="text-center text-xs">الإجمالي</TableHead>
-                        <TableHead className="text-center text-xs">تم إرجاعه</TableHead>
-                        <TableHead className="text-center text-xs w-[100px]">الآن</TableHead>
+                        <TableHead className="text-center text-xs">مستلم سابقاً</TableHead>
+                        <TableHead className="text-center text-xs w-[100px]">يتم استلامه الآن</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
