@@ -96,12 +96,13 @@ export function ImportProductsDialog({ trigger }: { trigger: React.ReactNode }) 
       'النوع (بيع-ايجار-بيع و ايجار)',
       'الكمية',
       'الفرع',
+      'كود الصنف (اختياري)',
     ];
     const data = [
       headers,
-      ['فستان سهرة أحمر', 'فساتين سهرة', 'M', 1500, 'إيجار', 3, 'الفرع الرئيسي'],
-      ['بدلة رجالي كحلي', 'بدل رجالي', '52', 4500, 'بيع', 10, 'فرع المهندسين'],
-      ['فستان زفاف', 'فساتين زفاف', 'S', 9000, 'بيع و إيجار', 1, 'الفرع الرئيسي'],
+      ['فستان سهرة أحمر', 'فساتين سهرة', 'M', 1500, 'إيجار', 3, 'الفرع الرئيسي', '90001001'],
+      ['بدلة رجالي كحلي', 'بدل رجالي', '52', 4500, 'بيع', 10, 'فرع المهندسين', ''],
+      ['فستان زفاف', 'فساتين زفاف', 'S', 9000, 'بيع و إيجار', 1, 'الفرع الرئيسي', 'WED-001'],
     ];
     const ws = XLSX.utils.aoa_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -154,6 +155,8 @@ export function ImportProductsDialog({ trigger }: { trigger: React.ReactNode }) 
           const price = parseFloat(row['السعر']);
           const initialStock = parseInt(row['الكمية'], 10);
           const branchName = row['الفرع']?.toString().trim();
+          // Read manual code if provided
+          const manualCode = row['كود الصنف (اختياري)']?.toString().trim() || row['كود الصنف']?.toString().trim();
 
           if (!productName) currentRowErrors.push("اسم الصنف مفقود");
           if (!categoryStr) currentRowErrors.push("النوع مفقود");
@@ -187,7 +190,12 @@ export function ImportProductsDialog({ trigger }: { trigger: React.ReactNode }) 
             sizeCache.add(sizeName.toLowerCase());
           }
 
-          const productCode = await getNextProductCode();
+          // Decide whether to use manual code or generate one
+          let productCode = manualCode;
+          if (!productCode) {
+              productCode = await getNextProductCode();
+          }
+
           if (!productCode) {
               importErrors.push(`- الصف ${rowIndex}: فشل في إنشاء باركود.`);
               continue;
@@ -275,7 +283,7 @@ export function ImportProductsDialog({ trigger }: { trigger: React.ReactNode }) 
         <DialogHeader>
           <DialogTitle>استيراد المنتجات من ملف Excel</DialogTitle>
           <DialogDescription>
-            اختر ملف Excel لرفع المنتجات بشكل جماعي. تأكد من أن الملف يحتوي على الأعمدة المطلوبة: `اسم الصنف`, `المجموعة`, `المقاس`, `السعر`, `النوع (بيع-ايجار-بيع و ايجار)`, `الكمية`, `الفرع`.
+            اختر ملف Excel لرفع المنتجات. يمكنك إضافة عمود "كود الصنف" لاستخدام أكوادك الخاصة، أو اتركه فارغاً ليقوم النظام بتوليدها تلقائياً.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -289,7 +297,7 @@ export function ImportProductsDialog({ trigger }: { trigger: React.ReactNode }) 
             onClick={handleDownloadTemplate}
           >
             <Download className="h-3 w-3" />
-            تحميل قالب Excel مع بيانات نموذجية
+            تحميل قالب Excel المحدث (يدعم كود الصنف)
           </Button>
         </div>
         <DialogFooter>
