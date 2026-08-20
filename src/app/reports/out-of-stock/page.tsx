@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/page-header';
 import { AppLayout, AuthGuard } from '@/components/app-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ArchiveX, Package, Search, Filter, Hash, Store, EyeOff, Loader2, Tags, Ruler } from 'lucide-react';
+import { ArchiveX, Package, Search, Filter, Hash, Store, EyeOff, Loader2, Tags, Ruler, ShoppingBag } from 'lucide-react';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Product, Branch } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -41,6 +41,7 @@ function OutOfStockReportContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedSize, setSelectedSize] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   // Ensure unique names for filter options to avoid duplicate key errors
@@ -64,10 +65,11 @@ function OutOfStockReportContent() {
             
         const matchesGroup = selectedGroup === 'all' || p.group === selectedGroup;
         const matchesSize = selectedSize === 'all' || p.size === selectedSize;
+        const matchesCategory = selectedCategory === 'all' || p.category === selectedCategory;
 
-        return isNotHidden && isOutOfStock && matchesSearch && matchesGroup && matchesSize;
+        return isNotHidden && isOutOfStock && matchesSearch && matchesGroup && matchesSize && matchesCategory;
     }).sort((a, b) => (a.group || '').localeCompare(b.group || ''));
-  }, [products, searchTerm, selectedGroup, selectedSize]);
+  }, [products, searchTerm, selectedGroup, selectedSize, selectedCategory]);
 
   const handleHideProduct = async (productId: string, productName: string) => {
     if (!db) return;
@@ -94,20 +96,29 @@ function OutOfStockReportContent() {
 
   const getBranchName = (branchId: string) => branches.find(b => b.id === branchId)?.name || 'كل الفروع';
 
+  const getCategoryBadge = (category: string) => {
+    switch (category) {
+      case 'sale': return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">بيع</Badge>;
+      case 'rental': return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">إيجار</Badge>;
+      case 'both': return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">بيع/إيجار</Badge>;
+      default: return <Badge variant="outline">{category}</Badge>;
+    }
+  };
+
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="تقرير الأصناف ذات الرصيد صفر" showBackButton />
 
       <Card>
-          <CardHeader className="pb-3">
-              <div className="flex items-center gap-2">
-                  <Filter className="h-5 w-5 text-primary" />
+          <CardHeader className="pb-3 text-right">
+              <div className="flex items-center gap-2 justify-end">
                   <CardTitle className="text-lg">تصفية النتائج</CardTitle>
+                  <Filter className="h-5 w-5 text-primary" />
               </div>
               <CardDescription>هذا التقرير يعرض الأصناف النشطة (غير المخفية) التي نفد مخزونها تماماً.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
+          <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-2 text-right">
                   <Label>بحث بالاسم أو الكود</Label>
                   <div className="relative">
                       <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -120,8 +131,23 @@ function OutOfStockReportContent() {
                   </div>
               </div>
 
-              <div className="space-y-2">
-                  <Label className="flex items-center gap-2"><Tags className="h-3 w-3 text-muted-foreground" /> تصفية بالمجموعة</Label>
+              <div className="space-y-2 text-right">
+                  <Label className="flex items-center gap-2 justify-end"><ShoppingBag className="h-3 w-3 text-muted-foreground" /> نوع المعاملة</Label>
+                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                      <SelectTrigger>
+                          <SelectValue placeholder="كل الأنواع" />
+                      </SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="all">كل الأنواع</SelectItem>
+                          <SelectItem value="sale">بيع فقط</SelectItem>
+                          <SelectItem value="rental">إيجار فقط</SelectItem>
+                          <SelectItem value="both">بيع وإيجار</SelectItem>
+                      </SelectContent>
+                  </Select>
+              </div>
+
+              <div className="space-y-2 text-right">
+                  <Label className="flex items-center gap-2 justify-end"><Tags className="h-3 w-3 text-muted-foreground" /> تصفية بالمجموعة</Label>
                   <Select value={selectedGroup} onValueChange={setSelectedGroup}>
                       <SelectTrigger>
                           <SelectValue placeholder="كل المجموعات" />
@@ -135,8 +161,8 @@ function OutOfStockReportContent() {
                   </Select>
               </div>
 
-              <div className="space-y-2">
-                  <Label className="flex items-center gap-2"><Ruler className="h-3 w-3 text-muted-foreground" /> تصفية بالمقاس</Label>
+              <div className="space-y-2 text-right">
+                  <Label className="flex items-center gap-2 justify-end"><Ruler className="h-3 w-3 text-muted-foreground" /> تصفية بالمقاس</Label>
                   <Select value={selectedSize} onValueChange={setSelectedSize}>
                       <SelectTrigger>
                           <SelectValue placeholder="كل المقاسات" />
@@ -166,10 +192,10 @@ function OutOfStockReportContent() {
               <TableRow>
                 <TableHead className="text-right">اسم المنتج</TableHead>
                 <TableHead className="text-center">الكود</TableHead>
+                <TableHead className="text-center">النوع</TableHead>
                 <TableHead className="text-center">المجموعة</TableHead>
                 <TableHead className="text-center">المقاس</TableHead>
                 <TableHead className="text-center">الفرع</TableHead>
-                <TableHead className="text-center">إجمالي المبيعات</TableHead>
                 <TableHead className="text-center">إجراءات</TableHead>
               </TableRow>
             </TableHeader>
@@ -191,6 +217,7 @@ function OutOfStockReportContent() {
                   <TableRow key={p.id}>
                     <TableCell className="font-bold text-right">{p.name}</TableCell>
                     <TableCell className="text-center font-mono text-xs">{p.productCode}</TableCell>
+                    <TableCell className="text-center">{getCategoryBadge(p.category)}</TableCell>
                     <TableCell className="text-center"><Badge variant="outline">{p.group || 'بدون'}</Badge></TableCell>
                     <TableCell className="text-center">{p.size}</TableCell>
                     <TableCell className="text-center text-xs">
@@ -199,7 +226,6 @@ function OutOfStockReportContent() {
                             {getBranchName(p.branchId)}
                         </div>
                     </TableCell>
-                    <TableCell className="text-center font-mono font-bold text-blue-600">{p.quantitySold || 0}</TableCell>
                     <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-2">
                             <Link href={`/products/${p.id}`}>
