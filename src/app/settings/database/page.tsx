@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Product, Order } from '@/lib/definitions';
+import { db as dbDexie } from '@/lib/db';
 
 function DatabaseManagementPageContent() {
   const { appUser, isUserLoading } = useUser();
@@ -79,7 +80,6 @@ function DatabaseManagementPageContent() {
     toast({ title: 'جاري إعادة حساب أرقام المخزون من واقع الفواتير...' });
 
     try {
-        // 1. Fetch all products and all orders
         const productsSnapshot = await get(ref(db, 'products'));
         const ordersSnapshot = await get(ref(db, 'daily-entries'));
 
@@ -92,32 +92,23 @@ function DatabaseManagementPageContent() {
         const productsData = productsSnapshot.val() as Record<string, Product>;
         const allProducts = Object.keys(productsData).map(id => ({ ...productsData[id], id }));
         
-        // Map to store calculated counts
         const calculatedStats: Record<string, { rented: number, sold: number }> = {};
         allProducts.forEach(p => {
             calculatedStats[p.id] = { rented: 0, sold: 0 };
         });
 
-        // 2. Process all orders to find actual rented/sold quantities
         if (ordersSnapshot.exists()) {
             const dailyEntries = ordersSnapshot.val();
-            // dailyEntries structure: { "2023-10-01": { orders: { "orderId": { ... } } } }
             Object.values(dailyEntries).forEach((dateEntry: any) => {
                 if (dateEntry.orders) {
                     Object.values(dateEntry.orders).forEach((order: any) => {
-                        // Ignore Cancelled orders entirely
                         if (order.status === 'Cancelled') return;
-
                         order.items?.forEach((item: any) => {
                             if (!calculatedStats[item.productId]) return;
-
                             const itemType = item.itemTransactionType || order.transactionType;
-                            
                             if (itemType === 'Sale') {
-                                // For Sales: Count as sold if order is not Cancelled
                                 calculatedStats[item.productId].sold += (Number(item.quantity) || 0);
                             } else if (itemType === 'Rental') {
-                                // For Rentals: Count as rented/reserved if order is NOT Cancelled and NOT Returned
                                 if (order.status !== 'Returned') {
                                     calculatedStats[item.productId].rented += (Number(item.quantity) || 0);
                                 }
@@ -128,27 +119,19 @@ function DatabaseManagementPageContent() {
             });
         }
 
-        // 3. Update products with corrected values based on initialStock
         const updates: Record<string, any> = {};
         let correctionCount = 0;
 
         allProducts.forEach(p => {
             const newRented = calculatedStats[p.id].rented;
             const newSold = calculatedStats[p.id].sold;
-            
-            // Recalculate Quantity In Stock (Physical items in shop)
-            // Logic: InShop = InitialStock - Sold - Rented
             const initial = Number(p.initialStock) || 0;
             const newInStock = Math.max(0, initial - newSold - newRented);
 
-            // Always apply to ensure everything is matched to invoices
             updates[`products/${p.id}/quantityRented`] = newRented;
             updates[`products/${p.id}/quantitySold`] = newSold;
             updates[`products/${p.id}/quantityInStock`] = newInStock;
-            
-            // Also sync rentalCount if it's vastly different
             updates[`products/${p.id}/rentalCount`] = newRented; 
-            
             correctionCount++;
         });
 
@@ -156,7 +139,7 @@ function DatabaseManagementPageContent() {
             await update(ref(db), updates);
             toast({ 
                 title: 'اكتملت عملية المزامنة', 
-                description: `تم تصحيح بيانات ${correctionCount} صنف بناءً على سجل الفواتير الفعلي. تم تحديث العدادات (مؤجر/مباع/متاح) بدقة.`,
+                description: `تم تصحيح بيانات ${correctionCount} صنف بناءً على سجل الفواتير الفعلي.`,
                 variant: 'default'
             });
         } else {
@@ -176,7 +159,18 @@ function DatabaseManagementPageContent() {
     try {
       const promises = paths.map(path => remove(ref(db, path)));
       await Promise.all(promises);
-      toast({ title: 'تم الحذف بنجاح', description: `تم مسح بيانات ${category} المحددة.` });
+      
+      // Clear local Dexie cache to ensure data disappears immediately
+      if (category === 'products') {
+          await dbDexie.persistentCache.where('path').equals('products').delete();
+      } else if (category === 'orders') {
+          await dbDexie.persistentCache.where('path').equals('daily-entries').delete();
+      } else if (category === 'metadata') {
+          await dbDexie.persistentCache.where('path').equals('productGroups').delete();
+          await dbDexie.persistentCache.where('path').equals('sizes').delete();
+      }
+
+      toast({ title: 'تم الحذف بنجاح', description: `تم مسح بيانات ${category} المحددة من السحاب والذاكرة المحلية.` });
       setConfirmTexts(prev => ({ ...prev, [category]: '' }));
     } catch (error: any) {
       toast({ variant: "destructive", title: "فشل الحذف", description: error.message });
@@ -289,11 +283,11 @@ function DatabaseManagementPageContent() {
                         حذف {title}
                     </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent>
+                <AlertDialogContent dir="rtl" className="text-right">
                     <AlertDialogHeader>
                         <AlertDialogTitle>حذف {title}</AlertDialogTitle>
                         <AlertDialogDescription>
-                            سيتم حذف جميع {title} بشكل نهائي. للمتابعة، اكتب كلمة "حذف" في الحقل أدناه.
+                            سيتم حذف جميع {title} بشكل نهائي من قاعدة البيانات والذاكرة المحلية. للمتابعة، اكتب كلمة "حذف" في الحقل أدناه.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <div className="my-4">
@@ -303,14 +297,17 @@ function DatabaseManagementPageContent() {
                             onChange={(e) => setConfirmTexts(prev => ({ ...prev, [category]: e.target.value }))}
                         />
                     </div>
-                    <AlertDialogFooter>
+                    <AlertDialogFooter className="flex-row-reverse gap-2">
                         <AlertDialogCancel>إلغاء</AlertDialogCancel>
                         <AlertDialogAction
-                            onClick={() => deletePath(paths, category)}
+                            onClick={async (e) => {
+                                e.preventDefault();
+                                await deletePath(paths, category);
+                            }}
                             disabled={confirmTexts[category] !== 'حذف' || loadingCategory === category}
                             className="bg-destructive hover:bg-destructive/90"
                         >
-                            {loadingCategory === category && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+                            {loadingCategory === category ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <Trash2 className="ml-2 h-4 w-4" />}
                             تأكيد الحذف النهائي
                         </AlertDialogAction>
                     </AlertDialogFooter>
@@ -388,7 +385,7 @@ function DatabaseManagementPageContent() {
                         حذف السجلات قبل هذا الشهر
                     </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent>
+                <AlertDialogContent dir="rtl" className="text-right">
                     <AlertDialogHeader>
                         <AlertDialogTitle>تأكيد الحذف الزمني</AlertDialogTitle>
                         <AlertDialogDescription>
@@ -396,7 +393,7 @@ function DatabaseManagementPageContent() {
                             <span className="font-bold text-destructive">{deleteUntilDate ? format(deleteUntilDate, 'MMMM yyyy', { locale: ar }) : ''}</span>.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
-                    <AlertDialogFooter>
+                    <AlertDialogFooter className="flex-row-reverse gap-2">
                         <AlertDialogCancel>إلغاء</AlertDialogCancel>
                         <AlertDialogAction onClick={handleDeleteOldData}>تأكيد الحذف</AlertDialogAction>
                     </AlertDialogFooter>
