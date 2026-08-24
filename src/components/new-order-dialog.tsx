@@ -113,7 +113,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
 
-  // تحميل المنتجات من الذاكرة المحلية لضمان السرعة
   useEffect(() => {
       const loadProducts = async () => {
           try {
@@ -130,7 +129,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
       loadProducts();
   }, []);
 
-  // التحقق من الوردية المفتوحة
   useEffect(() => {
     const findOpenShift = async () => {
         if (!appUser || !dbRTDB) return;
@@ -249,27 +247,32 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const handleSaveOrder = async () => {
     if (isSaving) return;
     
-    // 1. التحقق من البيانات الأساسية
     if (!branchId || !customerId || !transactionType || !sellerId) {
         toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء التأكد من تعبئة كافة الحقول المطلوبة.' });
         return;
     }
+
+    // التحقق من التواريخ الإلزامية في حالة الإيجار
+    if (transactionType === 'Rental') {
+        if (!orderDate || !deliveryDate || !returnDate) {
+            toast({ variant: 'destructive', title: 'بيانات ناقصة', description: 'في حالة الإيجار، يجب تحديد تاريخ الطلب والتسليم والإرجاع.' });
+            return;
+        }
+    }
+
     if (orderItems.length === 0 || orderItems.every(i => !i.productId)) {
         toast({ variant: 'destructive', title: 'بيان ناقص', description: 'يجب إضافة صنف واحد على الأقل للطلب.' });
         return;
     }
 
-    // حساب فرق المبلغ المدفوع (Delta)
     const paidDelta = isEditMode ? Math.round(paidAmount - (originalOrder?.paid || 0)) : Math.round(paidAmount);
 
-    // إذا كان هناك حركة مالية (دفع جديد أو استرداد)، يجب وجود وردية مفتوحة حالياً
     if (paidDelta !== 0 && !openShift) {
         toast({ variant: 'destructive', title: 'لا توجد وردية مفتوحة', description: 'يجب بدء وردية لاستلام أو رد أي مبالغ مالية.' });
         setShowStartShiftDialog(true);
         return;
     }
 
-    // في وضع الإضافة، يجب وجود وردية حتى لو كان المبلغ 0
     if (!isEditMode && !openShift) {
         setShowStartShiftDialog(true);
         return;
@@ -329,7 +332,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             paid: paidAmount,
             remainingAmount,
             discountAmount: totalDiscounts,
-            // في حالة التعديل، نحافظ على معرف الوردية الأصلي للطلب للبيانات التاريخية
             shiftId: isEditMode ? (order?.shiftId || null) : (openShift?.id || null),
             shiftCode: isEditMode ? (order?.shiftCode || null) : (openShift?.shiftCode || null),
             customerName: customer?.name || '',
@@ -345,11 +347,9 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             updatedAt: nowISO,
             notes: notes || null,
             datePath,
-            // الحفاظ على سجل المدفوعات القديم
             payments: order?.payments || {}
         };
 
-        // تسجيل الدفعة المالية (الفرق) على الوردية المفتوحة حالياً حصراً
         if (paidDelta !== 0 && openShift) {
             const paymentId = isEditMode ? `edit-payment-${Date.now()}` : "initial-payment";
             const paymentEntry = {
@@ -359,13 +359,12 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 date: nowISO,
                 userId: appUser!.id,
                 userName: appUser!.fullName,
-                shiftId: openShift.id // الوردية الحالية
+                shiftId: openShift.id 
             };
             
             if (!orderData.payments) orderData.payments = {};
             orderData.payments[paymentId] = paymentEntry;
 
-            // تحديث الوردية الحالية بالفرق المالي
             const currentShiftRef = ref(dbRTDB, `shifts/${openShift.id}`);
             await runTransaction(currentShiftRef, (s) => {
                 if (s) {
@@ -375,8 +374,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                     else if (paymentMethod === 'Visa') s.visa = (Number(s.visa) || 0) + amt;
                     else s.cash = (Number(s.cash) || 0) + amt;
                     
-                    // إذا كان تعديلاً، لا نغير SalesTotal للوردية الحالية إلا إذا كانت هي نفسها وردية الطلب
-                    // (هنا سنعتبر تعديل الإيراد يتبع الوردية الحالية لتبسيط الترحيل المالي)
                     const totalDelta = totalOrderAmount - (originalOrder?.total || 0);
                     if (transactionType === 'Sale') s.salesTotal = (Number(s.salesTotal) || 0) + totalDelta;
                     else s.rentalsTotal = (Number(s.rentalsTotal) || 0) + totalDelta;
@@ -396,7 +393,6 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
             orderData.deliveryEmployeeName = appUser!.fullName;
         }
 
-        // تحديث المخزون
         for (const newItem of cleanedItems) {
             const pRef = ref(dbRTDB, `products/${newItem.productId}`);
             await runTransaction(pRef, p => {
@@ -543,18 +539,27 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         <Card>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
                 <div className="flex flex-col gap-2">
-                    <Label>تاريخ الطلب</Label>
+                    <Label className="flex items-center gap-1">
+                        تاريخ الطلب
+                        {transactionType === 'Rental' && <span className="text-destructive font-bold mr-1">*</span>}
+                    </Label>
                     <DatePickerDialog value={orderDate} onValueChange={setOrderDate} />
                 </div>
                 {!isImmediateDelivery && (
                     <div className="flex flex-col gap-2">
-                        <Label>تاريخ التسليم</Label>
+                        <Label className="flex items-center gap-1">
+                            تاريخ التسليم
+                            {transactionType === 'Rental' && <span className="text-destructive font-bold mr-1">*</span>}
+                        </Label>
                         <DatePickerDialog value={deliveryDate} onValueChange={setDeliveryDate} fromDate={orderDate} />
                     </div>
                 )}
                 {transactionType === 'Rental' && (
                     <div className="flex flex-col gap-2">
-                        <Label>تاريخ الإرجاع</Label>
+                        <Label className="flex items-center gap-1">
+                            تاريخ الإرجاع
+                            <span className="text-destructive font-bold mr-1">*</span>
+                        </Label>
                         <DatePickerDialog value={returnDate} onValueChange={setReturnDate} fromDate={deliveryDate || orderDate} />
                     </div>
                 )}
@@ -730,7 +735,6 @@ export function NewOrderDialog({ trigger, order, productId, open: externalOpen, 
         setTimeout(() => {
           document.body.style.pointerEvents = 'auto';
           document.body.style.overflow = '';
-          // Ensure any stuck overlays are cleared
           document.querySelectorAll('[data-radix-overlay]').forEach(el => (el as HTMLElement).style.display = 'none');
         }, 100);
       }
