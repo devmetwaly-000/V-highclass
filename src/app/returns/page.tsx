@@ -13,6 +13,8 @@ import {
   Store,
   User,
   Package,
+  XCircle,
+  Loader2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -29,7 +31,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { format, startOfToday, isPast, startOfDay, endOfDay, subDays } from 'date-fns';
+import { format, startOfToday, isPast, startOfDay, endOfDay, subDays, addDays } from 'date-fns';
 import type { Order, Branch } from '@/lib/definitions';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useUser } from '@/firebase';
@@ -43,14 +45,13 @@ import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 function formatDate(dateString?: string | Date) {
     if (!dateString) return '-';
     const date = new Date(dateString);
-     if (isNaN(date.getTime())) {
+    if (isNaN(date.getTime())) {
         return '-'
     }
     return format(date, "d MMMM yyyy");
 }
 
 function ReturnProgress({ order }: { order: Order }) {
-    // نركز فقط على الأصناف المؤجرة
     const rentalItems = order.items.filter(item => (item.itemTransactionType || order.transactionType) === 'Rental');
     
     const total = rentalItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -68,12 +69,11 @@ function ReturnProgress({ order }: { order: Order }) {
     );
 }
 
-
 function ReturnsPageContent() {
   const [filter, setFilter] = useState<'all' | 'due' | 'overdue' | 'partial'>('all');
   const [branchFilter, setBranchFilter] = useState('all');
   const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 30));
-  const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 30));
+  const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 60));
   
   const { appUser } = useUser();
   const { data: allOrders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
@@ -88,44 +88,52 @@ function ReturnsPageContent() {
     const end = toDate ? endOfDay(toDate) : null;
 
     let orders = allOrders.filter(order => {
-        // نتحقق مما إذا كان الطلب يحتوي على أي أصناف مؤجرة (أو هو بالكامل إيجار)
+        // 1. استبعاد المرتجع بالكامل أو الملغي
+        if (order.status === 'Returned' || order.returnStatus === 'fully_returned' || order.status === 'Cancelled') return false;
+
+        // 2. التحقق من وجود أصناف مؤجرة
         const hasRentalItems = order.items.some(item => (item.itemTransactionType || order.transactionType) === 'Rental');
         if (!hasRentalItems) return false;
 
-        // إظهار إذا كان الطلب "تم التسليم" أو "مرتجع جزئي"
-        const isCurrentlyOut = order.status === 'Delivered to Customer' || order.returnStatus === 'partially_returned';
-        
-        // إخفاء إذا تم الإرجاع بالكامل
-        if (order.status === 'Returned' || order.returnStatus === 'fully_returned') return false;
-
-        // تصفية الفرع
+        // 3. تصفية الفرع
         let branchMatch = branchFilter === 'all' || order.branchId === branchFilter;
         if (appUser?.branchId && appUser.branchId !== 'all') {
             branchMatch = order.branchId === appUser.branchId;
         }
         if (!branchMatch) return false;
 
-        // تصفية التاريخ (بناءً على تاريخ الإرجاع)
-        if (order.returnDate) {
-            const retDate = new Date(order.returnDate);
-            const dateMatch = (!start || retDate >= start) && (!end || retDate <= end);
+        // 4. تصفية التاريخ (بناءً على تاريخ الإرجاع أو تاريخ الطلب كبديل)
+        const dateToFilterBy = order.returnDate ? new Date(order.returnDate) : new Date(order.orderDate);
+        if (start || end) {
+            const dateMatch = (!start || dateToFilterBy >= start) && (!end || dateToFilterBy <= end);
             if (!dateMatch) return false;
-        } else if (start || end) {
-            // إذا لم يوجد تاريخ إرجاع وكان هناك نطاق زمني محدد، نستبعده لعدم تطابق النطاق
-            return false;
         }
 
-        return isCurrentlyOut;
+        return true;
     });
     
     if (filter === 'overdue') {
         orders = orders.filter(o => o.returnDate && isPast(new Date(o.returnDate)));
     } else if (filter === 'partial') {
         orders = orders.filter(o => o.returnStatus === 'partially_returned');
+    } else if (filter === 'due') {
+        const today = startOfToday();
+        orders = orders.filter(o => o.returnDate && startOfDay(new Date(o.returnDate)).getTime() === today.getTime());
     }
 
-    return orders;
+    return orders.sort((a, b) => {
+        const dateA = a.returnDate ? new Date(a.returnDate).getTime() : new Date(a.orderDate).getTime();
+        const dateB = b.returnDate ? new Date(b.returnDate).getTime() : new Date(b.orderDate).getTime();
+        return dateA - dateB; // الأقدم (المستحق أولاً)
+    });
   }, [allOrders, filter, branchFilter, fromDate, toDate, appUser, isLoading]);
+
+  const clearFilters = () => {
+      setFromDate(undefined);
+      setToDate(undefined);
+      setFilter('all');
+      setBranchFilter('all');
+  };
 
   const renderMobileCards = () => (
     <div className="grid gap-4 md:hidden">
@@ -159,7 +167,7 @@ function ReturnsPageContent() {
                     <CardContent className="space-y-3 text-sm pt-2">
                         <ReturnProgress order={order} />
                         <div className="flex justify-between pt-2 border-t">
-                            <span className="text-muted-foreground flex items-center gap-1"><CalendarIcon className="h-3 w-3"/> الإرجاع المطلوب:</span>
+                            <span className="text-muted-foreground flex items-center gap-1"><CalendarIcon className="h-3 w-3"/> الإرجاع المقرر:</span>
                             <span className={cn(isOverdue && "text-destructive font-bold")}>{formatDate(order.returnDate)}</span>
                         </div>
                     </CardContent>
@@ -215,47 +223,48 @@ function ReturnsPageContent() {
 
                         return (
                             <TableRow key={order.id} className={cn(isOverdue && 'bg-destructive/5', isPartial && 'bg-amber-50/30')}>
-                            <TableCell className="text-center font-mono font-bold text-primary">{order.orderCode}</TableCell>
-                            <TableCell className="text-right font-medium">{order.customerName}</TableCell>
-                            <TableCell className="text-center">
-                                {isPartial ? (
-                                    <Badge className="bg-amber-100 text-amber-800 border-amber-300 gap-1.5">
-                                        <Undo2 className="h-3.5 w-3.5" /> إرجاع جزئي
-                                    </Badge>
-                                ) : (
-                                    <Badge variant="secondary">لم يتم البدء</Badge>
-                                )}
-                            </TableCell>
-                            <TableCell className="text-right"><ReturnProgress order={order} /></TableCell>
-                            <TableCell className="text-center text-xs font-mono">{formatDate(order.returnDate)}</TableCell>
-                            <TableCell className="text-center">
-                                {isOverdue ? (
-                                    <Badge variant="destructive" className="gap-1.5">
-                                        <AlertTriangle className="h-3.5 w-3.5" /> متأخر
-                                    </Badge>
-                                ) : (
-                                    <Badge variant="outline" className="text-green-600 border-green-200">في الموعد</Badge>
-                                )}
-                            </TableCell>
+                                <TableCell className="text-center font-mono font-bold text-primary">{order.orderCode}</TableCell>
+                                <TableCell className="text-right font-medium">{order.customerName}</TableCell>
                                 <TableCell className="text-center">
-                                <div className="flex gap-2 justify-center">
-                                    <ReceiveReturnDialog 
-                                        order={order} 
-                                        trigger={
-                                            <Button size="sm" className="gap-1.5 bg-green-600 text-white hover:bg-green-700">
-                                                <CheckCircle2 className="h-4 w-4"/> استلام
+                                    {isPartial ? (
+                                        <Badge className="bg-amber-100 text-amber-800 border-amber-300 gap-1.5">
+                                            <Undo2 className="h-3.5 w-3.5" /> إرجاع جزئي
+                                        </Badge>
+                                    ) : (
+                                        <Badge variant="secondary">لم يتم البدء</Badge>
+                                    )}
+                                </TableCell>
+                                <TableCell className="text-right"><ReturnProgress order={order} /></TableCell>
+                                <TableCell className="text-center text-xs font-mono">{formatDate(order.returnDate)}</TableCell>
+                                <TableCell className="text-center">
+                                    {isOverdue ? (
+                                        <Badge variant="destructive" className="gap-1.5">
+                                            <AlertTriangle className="h-3.5 w-3.5" /> متأخر
+                                        </Badge>
+                                    ) : (
+                                        <Badge variant="outline" className="text-green-600 border-green-200">في الموعد</Badge>
+                                    )}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                    <div className="flex gap-2 justify-center">
+                                        <ReceiveReturnDialog 
+                                            order={order} 
+                                            trigger={
+                                                <Button size="sm" className="gap-1.5 bg-green-600 text-white hover:bg-green-700">
+                                                    <CheckCircle2 className="h-4 w-4"/> استلام
+                                                </Button>
+                                            } 
+                                        />
+                                        <OrderDetailsDialog orderId={order.id}>
+                                            <Button variant="ghost" size="sm" className="gap-1.5">
+                                                <Eye className="h-4 w-4"/> عرض
                                             </Button>
-                                        } 
-                                    />
-                                    <OrderDetailsDialog orderId={order.id}>
-                                        <Button variant="ghost" size="sm" className="gap-1.5">
-                                            <Eye className="h-4 w-4"/> عرض
-                                        </Button>
-                                    </OrderDetailsDialog>
-                                </div>
+                                        </OrderDetailsDialog>
+                                    </div>
                                 </TableCell>
                             </TableRow>
-                        )})}
+                        );
+                    })}
                 </TableBody>
             </Table>
         </CardContent>
@@ -267,11 +276,16 @@ function ReturnsPageContent() {
       <PageHeader title="استلام المرتجعات" showBackButton />
 
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
             <div className="flex items-center gap-2">
                 <Filter className="h-5 w-5 text-primary" />
                 <CardTitle className="text-lg">تصفية المتابعة</CardTitle>
             </div>
+            {(fromDate || toDate || branchFilter !== 'all' || filter !== 'all') && (
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 gap-1">
+                    <XCircle className="h-4 w-4" /> مسح الفلاتر
+                </Button>
+            )}
         </CardHeader>
         <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
              <div className="flex flex-col gap-2">
@@ -279,21 +293,22 @@ function ReturnsPageContent() {
                  <Select value={filter} onValueChange={(v) => setFilter(v as any)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="all">كل الطلبات المفتوحة</SelectItem>
+                        <SelectItem value="all">كل المرتجعات المطلوبة</SelectItem>
+                        <SelectItem value="due">تستحق اليوم</SelectItem>
                         <SelectItem value="partial">المرتجع جزئياً فقط</SelectItem>
                         <SelectItem value="overdue">المتأخرة عن الموعد</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
              <div className="flex flex-col gap-2">
-                <Label>من تاريخ إرجاع</Label>
+                <Label>من تاريخ استحقاق</Label>
                  <DatePickerDialog
                     value={fromDate}
                     onValueChange={setFromDate}
                  />
             </div>
              <div className="flex flex-col gap-2">
-                <Label>إلى تاريخ إرجاع</Label>
+                <Label>إلى تاريخ استحقاق</Label>
                  <DatePickerDialog
                     value={toDate}
                     onValueChange={setToDate}
@@ -326,6 +341,7 @@ function ReturnsPageContent() {
                         <Package className="h-10 w-10 opacity-20" />
                     </div>
                     <p>لا توجد طلبات إيجار معلقة للاستلام حالياً في هذه الفترة.</p>
+                    <Button variant="outline" size="sm" onClick={clearFilters}>إظهار كافة المرتجعات</Button>
                 </CardContent>
             </Card>
         ) : (
@@ -336,12 +352,6 @@ function ReturnsPageContent() {
         )}
     </div>
   );
-}
-
-function addDays(date: Date, days: number): Date {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
 }
 
 export default function ReturnsPage() {
