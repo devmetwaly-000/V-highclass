@@ -599,7 +599,6 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                                         <Button variant="default" className="w-full justify-start gap-2 bg-green-600 hover:bg-green-700" onClick={() => handleUpdateStatus('Delivered to Customer')} disabled={isUpdatingStatus || order.remainingAmount > 0}>
                                             <Truck className="h-4 w-4" /> تسليم للعميل
                                         </Button>
-                                        {/* التراجع دائماً يعود لـ Pending كما طلب المستخدم */}
                                         <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground hover:text-destructive" onClick={() => handleUpdateStatus('Pending')} disabled={isUpdatingStatus}>
                                             <RotateCcw className="h-4 w-4" /> تراجع لـ قيد التجهيز
                                         </Button>
@@ -618,6 +617,11 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                         {order.remainingAmount > 0 && permissions.canOrdersAddPayment && order.status !== 'Cancelled' && (
                             <AddPaymentDialog order={order} trigger={<Button variant="default" className="w-full justify-start gap-2 bg-blue-600"><DollarSign className="h-4 w-4" /> تحصيل دفعة</Button>} />
                         )}
+                        
+                        {order.status !== 'Cancelled' && permissions.canOrdersAddNote && (
+                            <AddOrderNoteDialog order={order} trigger={<Button variant="outline" className="w-full justify-start gap-2"><MessageSquarePlus className="h-4 w-4" /> إضافة ملاحظة</Button>} />
+                        )}
+
                         {permissions.canOrdersPrintReceipt && (
                             <PrintCashierReceiptDialog order={order} trigger={<Button className="w-full justify-start gap-2" variant="outline"><Printer className="h-4 w-4" /> طباعة الإيصال</Button>} />
                         )}

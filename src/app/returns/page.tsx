@@ -29,7 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { format, startOfToday, isPast } from 'date-fns';
+import { format, startOfToday, isPast, startOfDay, endOfDay, subDays } from 'date-fns';
 import type { Order, Branch } from '@/lib/definitions';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useUser } from '@/firebase';
@@ -38,6 +38,7 @@ import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { AppLayout, AuthGuard } from '@/components/app-layout';
 import { ReceiveReturnDialog } from '@/components/receive-return-dialog';
 import { Progress } from '@/components/ui/progress';
+import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 
 function formatDate(dateString?: string | Date) {
     if (!dateString) return '-';
@@ -71,6 +72,8 @@ function ReturnProgress({ order }: { order: Order }) {
 function ReturnsPageContent() {
   const [filter, setFilter] = useState<'all' | 'due' | 'overdue' | 'partial'>('all');
   const [branchFilter, setBranchFilter] = useState('all');
+  const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 30));
+  const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 30));
   
   const { appUser } = useUser();
   const { data: allOrders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
@@ -80,6 +83,9 @@ function ReturnsPageContent() {
   
   const rentalOrdersToReturn = useMemo(() => {
     if (isLoading) return [];
+
+    const start = fromDate ? startOfDay(fromDate) : null;
+    const end = toDate ? endOfDay(toDate) : null;
 
     let orders = allOrders.filter(order => {
         // نتحقق مما إذا كان الطلب يحتوي على أي أصناف مؤجرة (أو هو بالكامل إيجار)
@@ -92,12 +98,24 @@ function ReturnsPageContent() {
         // إخفاء إذا تم الإرجاع بالكامل
         if (order.status === 'Returned' || order.returnStatus === 'fully_returned') return false;
 
+        // تصفية الفرع
         let branchMatch = branchFilter === 'all' || order.branchId === branchFilter;
         if (appUser?.branchId && appUser.branchId !== 'all') {
             branchMatch = order.branchId === appUser.branchId;
         }
+        if (!branchMatch) return false;
 
-        return isCurrentlyOut && branchMatch;
+        // تصفية التاريخ (بناءً على تاريخ الإرجاع)
+        if (order.returnDate) {
+            const retDate = new Date(order.returnDate);
+            const dateMatch = (!start || retDate >= start) && (!end || retDate <= end);
+            if (!dateMatch) return false;
+        } else if (start || end) {
+            // إذا لم يوجد تاريخ إرجاع وكان هناك نطاق زمني محدد، نستبعده لعدم تطابق النطاق
+            return false;
+        }
+
+        return isCurrentlyOut;
     });
     
     if (filter === 'overdue') {
@@ -107,7 +125,7 @@ function ReturnsPageContent() {
     }
 
     return orders;
-  }, [allOrders, filter, branchFilter, appUser, isLoading]);
+  }, [allOrders, filter, branchFilter, fromDate, toDate, appUser, isLoading]);
 
   const renderMobileCards = () => (
     <div className="grid gap-4 md:hidden">
@@ -255,7 +273,7 @@ function ReturnsPageContent() {
                 <CardTitle className="text-lg">تصفية المتابعة</CardTitle>
             </div>
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-3 gap-4">
+        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
              <div className="flex flex-col gap-2">
                  <Label>حالة الاستلام</Label>
                  <Select value={filter} onValueChange={(v) => setFilter(v as any)}>
@@ -266,6 +284,20 @@ function ReturnsPageContent() {
                         <SelectItem value="overdue">المتأخرة عن الموعد</SelectItem>
                     </SelectContent>
                 </Select>
+            </div>
+             <div className="flex flex-col gap-2">
+                <Label>من تاريخ إرجاع</Label>
+                 <DatePickerDialog
+                    value={fromDate}
+                    onValueChange={setFromDate}
+                 />
+            </div>
+             <div className="flex flex-col gap-2">
+                <Label>إلى تاريخ إرجاع</Label>
+                 <DatePickerDialog
+                    value={toDate}
+                    onValueChange={setToDate}
+                 />
             </div>
             <div className="flex flex-col gap-2">
                  <Label>الفرع</Label>
@@ -293,7 +325,7 @@ function ReturnsPageContent() {
                     <div className="p-4 rounded-full bg-muted">
                         <Package className="h-10 w-10 opacity-20" />
                     </div>
-                    <p>لا توجد طلبات إيجار معلقة للاستلام حالياً.</p>
+                    <p>لا توجد طلبات إيجار معلقة للاستلام حالياً في هذه الفترة.</p>
                 </CardContent>
             </Card>
         ) : (
@@ -304,6 +336,12 @@ function ReturnsPageContent() {
         )}
     </div>
   );
+}
+
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
 }
 
 export default function ReturnsPage() {

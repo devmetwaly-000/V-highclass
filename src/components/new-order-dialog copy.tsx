@@ -15,7 +15,8 @@ import {
   Calculator,
   AlertCircle,
   PlusCircle,
-  Hash
+  Hash,
+  CalendarX2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -55,6 +56,9 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { useSettings } from '@/hooks/use-settings';
 import { Switch } from '@/components/ui/switch';
 import { db } from '@/lib/db';
+import { checkRentalConflict } from '@/lib/rental-conflict';
+import { format as formatDate } from 'date-fns';
+import { ar } from 'date-fns/locale';
 
 type OrderItemState = {
   id: string;
@@ -83,6 +87,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const { data: customers } = useRtdbList<Customer>('customers');
   const { data: branches } = useRtdbList<Branch>('branches');
   const { data: regions } = useRtdbList<Region>('regions');
+  const { data: allOrders } = useRtdbList<Order>('daily-entries');
   
   const dbRTDB = useDatabase();
   const { toast } = useToast();
@@ -112,6 +117,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
+  const [conflictWarning, setConflictWarning] = useState<string | null>(null);
 
   // تحميل المنتجات من الذاكرة المحلية لضمان السرعة
   useEffect(() => {
@@ -158,6 +164,23 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     if (!branchId) return [];
     return cachedProducts.filter((p) => p.branchId === branchId || p.showInAllBranches);
   }, [branchId, cachedProducts]);
+
+  // ─── المنتجات المحجوزة في فترة الطلب الحالي ────────────────────────────
+  const bookedProductIds = useMemo<Set<string>>(() => {
+    if (transactionType !== 'Rental' || !deliveryDate || !returnDate) return new Set();
+    const ids = new Set<string>();
+    for (const product of availableProducts) {
+      const result = checkRentalConflict(
+        product.id,
+        deliveryDate,
+        returnDate,
+        allOrders,
+        order?.id,
+      );
+      if (result.hasConflict) ids.add(product.id);
+    }
+    return ids;
+  }, [availableProducts, deliveryDate, returnDate, transactionType, allOrders, order?.id]);
 
   useEffect(() => {
     if (isEditMode && order) {
@@ -257,6 +280,41 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     if (orderItems.length === 0 || orderItems.every(i => !i.productId)) {
         toast({ variant: 'destructive', title: 'بيان ناقص', description: 'يجب إضافة صنف واحد على الأقل للطلب.' });
         return;
+    }
+
+    // ─── فحص تعارض الحجز لطلبات الإيجار ──────────────────────────────
+    if (transactionType === 'Rental' && deliveryDate && returnDate) {
+        const rentalItems = orderItems.filter(
+            i => i.productId && (i.itemTransactionType === 'Rental' || i.itemTransactionType == null)
+        );
+
+        for (const item of rentalItems) {
+            const result = checkRentalConflict(
+                item.productId,
+                deliveryDate,
+                returnDate,
+                allOrders,
+                order?.id, // استثناء الطلب الحالي عند التعديل
+            );
+
+            if (result.hasConflict) {
+                const c = result.conflictingOrders[0];
+                const dFmt = (d: string) =>
+                    formatDate(new Date(d), 'd MMM yyyy', { locale: ar });
+                const msg =
+                    `"${item.productName}" محجوزة في هذه الفترة!\n` +
+                    `فاتورة: ${c.orderCode} — ${c.customerName}\n` +
+                    `من ${dFmt(c.deliveryDate)} إلى ${dFmt(c.returnDate)}`;
+                setConflictWarning(msg);
+                toast({
+                    variant: 'destructive',
+                    title: '⚠️ تعارض في الحجز',
+                    description: `"${item.productName}" مؤجرة بالفعل من ${dFmt(c.deliveryDate)} إلى ${dFmt(c.returnDate)} — فاتورة ${c.orderCode} (${c.customerName}).`,
+                });
+                return;
+            }
+        }
+        setConflictWarning(null);
     }
 
     // حساب فرق المبلغ المدفوع (Delta)
@@ -579,25 +637,39 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                         <span>يجب اختيار الفرع أولاً</span>
                                     </div>
                                 ) : (
-                                    <SelectProductDialog products={availableProducts} onProductSelected={p => {
-                                        const prod = cachedProducts.find(x => x.id === p);
-                                        if(prod) {
-                                            const itType = (prod.category === 'both' ? (transactionType as any || 'Rental') : (prod.category === 'sale' ? 'Sale' : 'Rental'));
-                                            const initialPrice = itType === 'Sale' ? (Number(prod.salePrice) || Number(prod.price)) : (Number(prod.rentalPrice) || Number(prod.price));
-                                            
-                                            handleUpdateItem(item.id, { 
-                                                productId: prod.id, 
-                                                productName: `${prod.name} - ${prod.size}`, 
-                                                transactionBasePrice: initialPrice,
-                                                originalUnitPrice: initialPrice,
-                                                productCode: prod.productCode,
-                                                productCategory: prod.category,
-                                                itemTransactionType: itType,
-                                                salePrice: Number(prod.salePrice) || Number(prod.price) || 0,
-                                                rentalPrice: Number(prod.rentalPrice) || 0
-                                            });
-                                        }
-                                    }} selectedProductId={item.productId} disabled={!branchId || isProductsLoading} />
+                                    <>
+                                    <SelectProductDialog
+                                        products={availableProducts}
+                                        bookedProductIds={bookedProductIds}
+                                        onProductSelected={p => {
+                                            const prod = cachedProducts.find(x => x.id === p);
+                                            if(prod) {
+                                                const itType = (prod.category === 'both' ? (transactionType as any || 'Rental') : (prod.category === 'sale' ? 'Sale' : 'Rental'));
+                                                const initialPrice = itType === 'Sale' ? (Number(prod.salePrice) || Number(prod.price)) : (Number(prod.rentalPrice) || Number(prod.price));
+                                                handleUpdateItem(item.id, { 
+                                                    productId: prod.id, 
+                                                    productName: `${prod.name} - ${prod.size}`, 
+                                                    transactionBasePrice: initialPrice,
+                                                    originalUnitPrice: initialPrice,
+                                                    productCode: prod.productCode,
+                                                    productCategory: prod.category,
+                                                    itemTransactionType: itType,
+                                                    salePrice: Number(prod.salePrice) || Number(prod.price) || 0,
+                                                    rentalPrice: Number(prod.rentalPrice) || 0
+                                                });
+                                            }
+                                        }}
+                                        selectedProductId={item.productId}
+                                        disabled={!branchId || isProductsLoading}
+                                    />
+                                    {/* تحذير مرئي إذا كان الصنف المختار محجوزاً */}
+                                    {item.productId && bookedProductIds.has(item.productId) && (
+                                        <div className="flex items-center gap-2 mt-1 px-2 py-1.5 rounded-md bg-destructive/10 border border-destructive/30 text-destructive text-xs">
+                                            <CalendarX2 className="h-3.5 w-3.5 shrink-0" />
+                                            <span>هذه القطعة <strong>محجوزة</strong> في فترة التسليم والإرجاع المحددة — لن يمكن حفظ الطلب</span>
+                                        </div>
+                                    )}
+                                    </>
                                 )}
                             </div>
                             <div className="col-span-3 lg:col-span-2">
@@ -710,6 +782,19 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 </div>
             </CardContent>
         </Card>
+        {/* تحذير تعارض الحجز */}
+        {conflictWarning && (
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/40 text-destructive text-sm">
+                <CalendarX2 className="h-5 w-5 shrink-0 mt-0.5" />
+                <div className="whitespace-pre-line leading-relaxed">{conflictWarning}</div>
+            </div>
+        )}
+        {bookedProductIds.size > 0 && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-400">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>يوجد <strong>{bookedProductIds.size}</strong> صنف محجوز في الفترة المحددة — مُعلَّم باللون الأحمر في قائمة الاختيار</span>
+            </div>
+        )}
         <Button onClick={handleSaveOrder} className="w-full h-12 text-lg font-bold gap-2" disabled={isSaving}>
             {isSaving ? <Loader2 className="h-5 w-5 animate-spin ml-2" /> : null}
             {isEditMode ? 'تحديث بيانات الطلب' : 'حفظ الطلب'}
