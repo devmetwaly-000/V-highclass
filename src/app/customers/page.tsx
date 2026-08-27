@@ -1,6 +1,6 @@
 'use client';
 
-import { MoreHorizontal, PlusCircle, Phone, Search } from 'lucide-react';
+import { MoreHorizontal, Phone, Search, FileUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/table';
 import { PageHeader } from '@/components/page-header';
 import { AddCustomerDialog } from '@/components/add-customer-dialog';
+import { ImportCustomersDialog } from '@/components/import-customers-dialog';
 import { Input } from '@/components/ui/input';
 import { useEffect, useState, useMemo } from 'react';
 import type { Customer } from '@/lib/definitions';
@@ -33,7 +34,7 @@ import { useRtdbList } from '@/hooks/use-rtdb';
 import { AuthLayout } from '@/components/app-layout';
 import { usePermissions } from '@/hooks/use-permissions';
 
-const requiredPermissions = ['customers:add', 'customers:edit', 'customers:delete'] as const;
+const requiredPermissions = ['customers:add', 'customers:edit', 'customers:delete', 'customers:import'] as const;
 
 function CustomersPageContent() {
     const { data: customers, isLoading, error } = useRtdbList<Customer>('customers');
@@ -170,6 +171,16 @@ function CustomersPageContent() {
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
             </div>
+            {permissions.canCustomersImport && (
+                <ImportCustomersDialog
+                    trigger={
+                        <Button variant="outline" size="sm" className="gap-1">
+                            <FileUp className="h-4 w-4" />
+                            استيراد
+                        </Button>
+                    }
+                />
+            )}
             {permissions.canCustomersAdd && (
                 <AddCustomerDialog 
                     open={isAddCustomerOpen}
@@ -184,12 +195,24 @@ function CustomersPageContent() {
             <Card>
                 <CardContent className="h-48 flex flex-col items-center justify-center text-muted-foreground gap-2">
                 <p>لا يوجد عملاء بعد.</p>
-                {permissions.canCustomersAdd && (
-                    <AddCustomerDialog 
-                        open={isAddCustomerOpen}
-                        onOpenChange={setIsAddCustomerOpen}
-                    />
-                )}
+                <div className="flex items-center gap-2">
+                    {permissions.canCustomersImport && (
+                        <ImportCustomersDialog
+                            trigger={
+                                <Button variant="outline" size="sm" className="gap-1">
+                                    <FileUp className="h-4 w-4" />
+                                    استيراد
+                                </Button>
+                            }
+                        />
+                    )}
+                    {permissions.canCustomersAdd && (
+                        <AddCustomerDialog 
+                            open={isAddCustomerOpen}
+                            onOpenChange={setIsAddCustomerOpen}
+                        />
+                    )}
+                </div>
                 </CardContent>
             </Card>
         ) : (

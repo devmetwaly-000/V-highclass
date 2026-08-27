@@ -43,6 +43,7 @@ export const PERMISSIONS_CONFIG = {
             add: { id: 'customers:add', label: 'إضافة عميل' },
             edit: { id: 'customers:edit', label: 'تعديل عميل' },
             delete: { id: 'customers:delete', label: 'حذف عميل' },
+            import: { id: 'customers:import', label: 'استيراد من Excel' },
         }
     },
     suppliers: {
