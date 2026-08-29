@@ -13,6 +13,8 @@ import {
   CheckCircle2,
   Truck,
   Scissors,
+  ChevronRight,
+  ChevronLeft,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -58,7 +60,7 @@ import { cn } from '@/lib/utils';
 import { CountdownBanner } from '@/components/countdown-banner';
 
 const ITEMS_PER_PAGE = 50;
-const MAX_SYNC_DAYS = 30; // تقليل النطاق الافتراضي لزيادة السرعة
+const MAX_SYNC_DAYS = 500; // تم زيادة الحد لضمان ظهور كافة الطلبات التاريخية
 
 function formatDate(dateString?: string | Date) {
     if (!dateString) return '-';
@@ -85,22 +87,25 @@ function OrdersPageContent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isPending, startTransition] = useTransition();
 
-  const isSuperAdmin = useMemo(() => appUser?.permissions.includes('all'), [appUser]);
+  const isSuperAdmin = useMemo(() => {
+      if (!appUser) return false;
+      return appUser.permissions.includes('all') || appUser.role === 'admin' || appUser.username === 'admin';
+  }, [appUser]);
 
   // فلاتر الواجهة
-  const [searchInput, setSearchInput] = useState(''); // للحصول على استجابة سريعة عند الكتابة
-  const [searchTerm, setSearchTerm] = useState('');   // القيمة التي تتم الفلترة بناءً عليها (مؤجلة)
+  const [searchInput, setSearchInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [transactionType, setTransactionType] = useState('all');
   const [status, setStatus] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
   const [sortBy, setSortBy] = useState<'date' | 'code'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [fromDate, setFromDate] = useState<Date | undefined>(startOfDay(subDays(new Date(), 7)));
-  const [toDate, setToDate] = useState<Date | undefined>(endOfDay(new Date()));
+  const [fromDate, setFromDate] = useState<Date | undefined>(undefined); // جعلها فارغة افتراضياً لعرض "الكل"
+  const [toDate, setToDate] = useState<Date | undefined>(undefined);
   const [hideCompleted, setHideCompleted] = useState(true);
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
 
-  // جلب البيانات مع تحديد الحد الأقصى
+  // جلب البيانات
   const { data: allOrders, isLoading: isLoadingOrders, error: ordersError } = useRtdbList<Order>('daily-entries', {
       limit: MAX_SYNC_DAYS
   });
@@ -115,7 +120,7 @@ function OrdersPageContent() {
     }
   }, [appUser, isSuperAdmin]);
 
-  // تحديث نص البحث بشكل مؤجل لتحسين الأداء
+  // تحديث نص البحث بشكل مؤجل
   useEffect(() => {
     const handler = setTimeout(() => {
         startTransition(() => {
@@ -133,19 +138,19 @@ function OrdersPageContent() {
     const end = toDate ? endOfDay(toDate) : null;
 
     let result = allOrders.filter(order => {
-      // 1. تصفية التاريخ (الأكثر تأثيراً على الأداء)
-      const orderDate = new Date(order.orderDate || order.createdAt || 0);
-      const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
-      if (!dateMatch) return false;
-
-      // 2. تصفية الفرع
+      // 1. تصفية الفرع (الأولوية لفرع الموظف)
       if (!isSuperAdmin && appUser?.branchId && appUser.branchId !== 'all') {
         if (order.branchId !== appUser.branchId) return false;
       } else if (branchFilter !== 'all' && order.branchId !== branchFilter) {
         return false;
       }
 
-      // 3. تصفية النص (البحث السريع)
+      // 2. تصفية التاريخ
+      const orderDate = new Date(order.orderDate || order.createdAt || 0);
+      const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
+      if (!dateMatch) return false;
+
+      // 3. تصفية النص
       const query = searchTerm.toLowerCase().trim();
       if (query) {
           const searchMatch = 
@@ -239,7 +244,7 @@ function OrdersPageContent() {
     }
   };
 
-  if (ordersError) return <div className="p-8 text-destructive">خطأ في الاتصال: {ordersError.message}</div>;
+  if (ordersError) return <div className="p-8 text-destructive text-center font-bold">خطأ في الاتصال بقاعدة البيانات: {ordersError.message}</div>;
 
   return (
     <div className="flex flex-col gap-8">
@@ -255,40 +260,40 @@ function OrdersPageContent() {
 
       <CountdownBanner />
 
-      <Card className="border-primary/20">
+      <Card className="border-primary/20 shadow-sm">
         <CardHeader className="pb-3">
              <div className="flex w-full items-center justify-between">
               <div className="flex items-center gap-2">
                 <Filter className="h-5 w-5 text-primary" />
-                <CardTitle className="text-lg">فلترة ذكية للطلبات</CardTitle>
+                <CardTitle className="text-lg">تصفية وبحث شامل</CardTitle>
               </div>
               {(isLoading || isPending) && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
             </div>
         </CardHeader>
         <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
                <div className="flex flex-col gap-2 col-span-full">
-                <Label htmlFor="search">بحث سريع</Label>
+                <Label htmlFor="search" className="font-bold">بحث سريع</Label>
                 <div className="relative">
                     <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                         id="search"
                         placeholder="رقم الفاتورة، العميل، الهاتف، أو اسم المنتج..."
-                        className="pr-9 h-11"
+                        className="pr-9 h-11 border-primary/30 focus-visible:ring-primary"
                         value={searchInput}
                         onChange={(e) => setSearchInput(e.target.value)}
                     />
                 </div>
               </div>
                <div className="flex flex-col gap-2">
-                  <Label>من تاريخ</Label>
+                  <Label className="text-xs">من تاريخ</Label>
                   <DatePickerDialog value={fromDate} onValueChange={setFromDate} />
               </div>
                <div className="flex flex-col gap-2">
-                  <Label>إلى تاريخ</Label>
+                  <Label className="text-xs">إلى تاريخ</Label>
                   <DatePickerDialog value={toDate} onValueChange={setToDate} fromDate={fromDate} />
               </div>
                <div className="flex flex-col gap-2">
-                <Label htmlFor="type">نوع المعاملة</Label>
+                <Label htmlFor="type" className="text-xs">نوع المعاملة</Label>
                  <Select value={transactionType} onValueChange={setTransactionType}>
                   <SelectTrigger id="type"><SelectValue placeholder="الكل" /></SelectTrigger>
                   <SelectContent>
@@ -299,7 +304,7 @@ function OrdersPageContent() {
                 </Select>
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="status">الحالة</Label>
+                <Label htmlFor="status" className="text-xs">الحالة</Label>
                  <Select value={status} onValueChange={setStatus}>
                   <SelectTrigger id="status"><SelectValue placeholder="الكل" /></SelectTrigger>
                   <SelectContent>
@@ -313,8 +318,22 @@ function OrdersPageContent() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {isSuperAdmin && (
+                  <div className="flex flex-col gap-2">
+                    <Label className="text-xs">تصفية بالفرع</Label>
+                    <Select value={branchFilter} onValueChange={setBranchFilter}>
+                        <SelectTrigger><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">كل الفروع</SelectItem>
+                            {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                  </div>
+              )}
+
               <div className="flex flex-col gap-2">
-                <Label className="flex items-center gap-1.5"><ArrowUpDown className="h-3 w-3" /> ترتيب حسب</Label>
+                <Label className="flex items-center gap-1.5 text-xs"><ArrowUpDown className="h-3 w-3" /> ترتيب حسب</Label>
                  <Select 
                     value={`${sortBy}-${sortDir}`} 
                     onValueChange={(val) => {
@@ -350,41 +369,50 @@ function OrdersPageContent() {
       ) : filteredOrders.length === 0 ? (
            <Card className="border-dashed h-64 flex flex-col items-center justify-center text-muted-foreground gap-3">
                 <Package className="h-12 w-12 opacity-10" />
-                <p>لا توجد طلبات تطابق الفلتر (يتم عرض آخر {MAX_SYNC_DAYS} يوماً).</p>
+                <p>لا توجد طلبات تطابق الفلتر أو لا يوجد صلاحية للفرع.</p>
+                <Button variant="outline" size="sm" onClick={() => { setSearchInput(''); setFromDate(undefined); setToDate(undefined); setHideCompleted(false); setStatus('all'); }}>عرض كافة الطلبات المتاحة</Button>
             </Card>
         ) : (
-             <div className="flex flex-col gap-4">
+             <div className="flex flex-col gap-6">
+                <div className="text-xs text-muted-foreground font-medium pr-2">
+                    تم العثور على <span className="text-primary font-bold">{filteredOrders.length}</span> طلب.
+                </div>
+                
                 <Card className={cn("hidden md:block transition-opacity duration-200", isPending && "opacity-50")}>
                     <CardContent className="p-0 overflow-x-auto">
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead className="text-center">كود الطلب</TableHead>
-                                    <TableHead className="text-center">أصناف الطلب</TableHead>
+                                    <TableHead className="text-center w-[120px]">كود الطلب</TableHead>
+                                    <TableHead className="text-center w-[80px]">الأصناف</TableHead>
                                     <TableHead className="text-right">العميل</TableHead>
-                                    <TableHead className="text-center">الوردية</TableHead>
-                                    <TableHead className="text-right">البائع</TableHead>
-                                    <TableHead className="text-center">تاريخ الطلب</TableHead>
-                                    <TableHead className="text-center">الإجمالي</TableHead>
+                                    <TableHead className="text-center">الفرع</TableHead>
+                                    <TableHead className="text-center">التاريخ</TableHead>
+                                    <TableHead className="text-center">إجمالي الصافي</TableHead>
+                                    <TableHead className="text-center">المسدد</TableHead>
+                                    <TableHead className="text-center">المتبقي</TableHead>
                                     <TableHead className="text-center">الحالة</TableHead>
-                                    <TableHead className="text-center">الإجراءات</TableHead>
+                                    <TableHead className="text-center">إجراءات</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {paginatedOrders.map((order) => (
-                                    <TableRow key={order.uniqueKey || order.id} className={cn(order.status === 'Cancelled' && "bg-destructive/5 opacity-80")}>
+                                    <TableRow key={order.uniqueKey || order.id} className={cn(order.status === 'Cancelled' && "bg-destructive/5 opacity-80", "hover:bg-muted/30")}>
                                         <TableCell className="text-center font-mono font-bold text-primary">{order.orderCode}</TableCell>
                                         <TableCell className="text-center"><OrderItemsPreviewDialog items={order.items || []} /></TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex flex-col items-end">
-                                                <span className="font-medium">{order.customerName}</span>
+                                                <span className="font-medium text-sm">{order.customerName}</span>
                                                 {order.customerPhone && <span dir="ltr" className="text-[10px] text-muted-foreground font-mono">{order.customerPhone}</span>}
                                             </div>
                                         </TableCell>
-                                        <TableCell className="text-center"><Badge variant="outline" className="text-[10px]">{order.shiftCode || '-'}</Badge></TableCell>
-                                        <TableCell className="text-right text-xs">{order.sellerName}</TableCell>
+                                        <TableCell className="text-center text-[10px]">{order.branchName}</TableCell>
                                         <TableCell className="text-center text-[10px] font-mono whitespace-nowrap">{formatDate(order.orderDate)}</TableCell>
-                                        <TableCell className="text-center font-mono font-bold">{order.total.toLocaleString()}</TableCell>
+                                        <TableCell className="text-center font-mono font-bold">{Math.round(order.total).toLocaleString()}</TableCell>
+                                        <TableCell className="text-center font-mono text-green-600">{Math.round(order.paid).toLocaleString()}</TableCell>
+                                        <TableCell className={cn("text-center font-mono font-black", order.remainingAmount > 0 ? "text-destructive" : "text-green-600")}>
+                                            {Math.round(order.remainingAmount).toLocaleString()}
+                                        </TableCell>
                                         <TableCell className="text-center">{getStatusComponent(order)}</TableCell>
                                         <TableCell className="text-center">
                                             <OrderDetailsDialog orderId={order.id} order={order}><Button variant="outline" size="sm" className="h-8 gap-1"><Eye className="h-3.5 w-3.5" />عرض</Button></OrderDetailsDialog>
@@ -398,38 +426,73 @@ function OrdersPageContent() {
 
                 <div className={cn("grid gap-4 md:hidden transition-opacity duration-200", isPending && "opacity-50")}>
                     {paginatedOrders.map((order) => (
-                        <Card key={order.uniqueKey || order.id}>
-                            <CardHeader className="p-4 pb-2">
+                        <Card key={order.uniqueKey || order.id} className="overflow-hidden">
+                            <CardHeader className="p-4 pb-2 bg-muted/20">
                                 <div className="flex items-center justify-between">
                                     <span className="font-mono font-bold text-primary">{order.orderCode}</span>
-                                    <span className="font-bold">{order.total.toLocaleString()} ج.م</span>
+                                    <div className="flex flex-col items-end">
+                                        <span className="font-bold text-lg">{Math.round(order.total).toLocaleString()} ج.م</span>
+                                        <span className="text-[10px] text-muted-foreground">{order.branchName}</span>
+                                    </div>
                                 </div>
-                                <p className="text-sm font-medium text-right mt-1">{order.customerName}</p>
+                                <p className="text-sm font-bold text-right mt-1">{order.customerName}</p>
                             </CardHeader>
-                            <CardContent className="p-4 pt-0 flex justify-between items-center">
-                                <div className="flex flex-col gap-1">
-                                    <div className="flex items-center gap-2">
+                            <CardContent className="p-4 pt-4 flex justify-between items-center">
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex items-center gap-3">
                                         <OrderItemsPreviewDialog items={order.items || []} />
                                         <span className="text-[9px] text-muted-foreground font-mono">{formatDate(order.orderDate)}</span>
+                                    </div>
+                                    <div className="flex gap-2 text-[10px]">
+                                        <span className="text-green-600 font-bold">المسدد: {Math.round(order.paid)}</span>
+                                        <span className={cn("font-black", order.remainingAmount > 0 ? "text-destructive" : "text-green-600")}>المتبقي: {Math.round(order.remainingAmount)}</span>
                                     </div>
                                 </div>
                                 {getStatusComponent(order)}
                             </CardContent>
                             <CardFooter className="p-2 pt-0">
-                                <OrderDetailsDialog orderId={order.id} order={order}><Button variant="ghost" size="sm" className="w-full text-xs h-8">عرض التفاصيل</Button></OrderDetailsDialog>
+                                <OrderDetailsDialog orderId={order.id} order={order}><Button variant="ghost" size="sm" className="w-full text-xs h-9 border-t rounded-none">عرض كامل التفاصيل</Button></OrderDetailsDialog>
                             </CardFooter>
                         </Card>
                     ))}
                 </div>
                 
                 {totalPages > 1 && (
-                    <Pagination>
-                        <PaginationContent>
-                            <PaginationItem><PaginationPrevious onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} className="cursor-pointer" /></PaginationItem>
-                            <PaginationItem><span className="p-2 font-mono text-xs">صفحة {currentPage} من {totalPages}</span></PaginationItem>
-                            <PaginationItem><PaginationNext onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} className="cursor-pointer" /></PaginationItem>
-                        </PaginationContent>
-                    </Pagination>
+                    <div className="py-4 border-t">
+                        <Pagination>
+                            <PaginationContent>
+                                <PaginationItem>
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        disabled={currentPage <= 1} 
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        className="gap-1 px-3"
+                                    >
+                                        <ChevronRight className="h-4 w-4" />
+                                        السابق
+                                    </Button>
+                                </PaginationItem>
+                                <PaginationItem>
+                                    <span className="px-4 py-2 font-mono text-sm font-bold bg-muted rounded-md border">
+                                        صفحة {currentPage} من {totalPages}
+                                    </span>
+                                </PaginationItem>
+                                <PaginationItem>
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        disabled={currentPage >= totalPages} 
+                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                        className="gap-1 px-3"
+                                    >
+                                        التالي
+                                        <ChevronLeft className="h-4 w-4" />
+                                    </Button>
+                                </PaginationItem>
+                            </PaginationContent>
+                        </Pagination>
+                    </div>
                 )}
              </div>
         )
