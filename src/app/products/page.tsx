@@ -114,9 +114,15 @@ function ProductsPageContent() {
                 const cachedItems = await db.persistentCache.where('path').equals('products').toArray();
                 if (cachedItems.length > 0) {
                     const loaded = cachedItems.map(item => item.data as Product);
+                    
+                    // ضمان عدم وجود تكرار عند التحميل الأولي من الكاش
+                    const productMap = new Map<string, Product>();
+                    loaded.forEach(p => productMap.set(p.id, p));
+                    const uniqueLoaded = Array.from(productMap.values());
+
                     // ترتيب الأحدث أولاً
-                    loaded.sort((a, b) => (b.updatedAt || b.createdAt || "") > (a.updatedAt || a.createdAt || "") ? 1 : -1);
-                    setAllProducts(loaded);
+                    uniqueLoaded.sort((a, b) => (b.updatedAt || b.createdAt || "") > (a.updatedAt || a.createdAt || "") ? 1 : -1);
+                    setAllProducts(uniqueLoaded);
                 }
             } catch (e) {
                 console.error("Failed to load local cache:", e);
@@ -173,17 +179,16 @@ function ProductsPageContent() {
                         });
                     }
 
-                    // دمج البيانات الجديدة مع القديمة بدون تكرار
+                    // دمج البيانات الجديدة مع القديمة بضمان عدم التكرار (ID-based Merge)
                     setAllProducts(prev => {
-                        const combined = [...prev];
-                        updates.forEach(newItem => {
-                            const index = combined.findIndex(p => p.id === newItem.id);
-                            if (index > -1) {
-                                combined[index] = newItem;
-                            } else {
-                                combined.push(newItem);
-                            }
-                        });
+                        const productMap = new Map<string, Product>();
+                        // إضافة المنتجات الحالية للخريطة
+                        prev.forEach(p => productMap.set(p.id, p));
+                        // إضافة/تحديث بالبيانات الجديدة
+                        updates.forEach(newItem => productMap.set(newItem.id, newItem));
+                        
+                        const combined = Array.from(productMap.values());
+                        
                         // إعادة الترتيب
                         return combined.sort((a, b) => 
                             (b.updatedAt || b.createdAt || "") > (a.updatedAt || a.createdAt || "") ? 1 : -1
@@ -309,10 +314,8 @@ function ProductsPageContent() {
         </div>
       </PageHeader>
 
-      {/* العداد التنازلي المركزي */}
       <CountdownBanner />
 
-      {/* Persistent Cache & Background Sync Monitor */}
       <Card className={cn("border-none shadow-none transition-colors duration-500", isFullySynced ? "bg-green-50/50" : "bg-primary/5")}>
           <CardContent className="py-3 px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">

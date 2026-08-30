@@ -11,19 +11,16 @@ import {
 } from "@/components/ui/dialog";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import type { Product } from '@/lib/definitions';
-import { ChevronsUpDown, Hash, AlertCircle, ShoppingBag, Repeat, CalendarX2 } from 'lucide-react';
-import { Badge } from './ui/badge';
-import { cn } from '@/lib/utils';
+import { ChevronsUpDown, Hash, AlertCircle, ShoppingBag, Repeat } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
+import { Badge } from './ui/badge';
 
 type SelectProductDialogProps = {
   products: Product[];
   onProductSelected: (productId: string) => void;
   selectedProductId?: string;
   disabled?: boolean;
-  /** معرّفات المنتجات المحجوزة في الفترة المختارة — تُعرض بتحذير أحمر */
-  bookedProductIds?: Set<string>;
 };
 
 export function SelectProductDialog({
@@ -31,7 +28,6 @@ export function SelectProductDialog({
   onProductSelected,
   selectedProductId,
   disabled,
-  bookedProductIds,
 }: SelectProductDialogProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -43,11 +39,18 @@ export function SelectProductDialog({
     setSearchQuery("");
   };
   
-  const selectedProduct = products.find(p => p.id === selectedProductId);
+  // حماية ضد التكرار: التأكد من أن كل منتج في القائمة فريد من نوعه حسب الـ ID
+  const uniqueProducts = useMemo(() => {
+    const productMap = new Map<string, Product>();
+    products.forEach(p => productMap.set(p.id, p));
+    return Array.from(productMap.values());
+  }, [products]);
+
+  const selectedProduct = uniqueProducts.find(p => p.id === selectedProductId);
 
   const filteredProducts = useMemo(() => {
     // --- القاعدة الأساسية: استبعاد المنتجات المخفية من البيع ---
-    let visibleProducts = products.filter(p => !p.isHidden);
+    let visibleProducts = uniqueProducts.filter(p => !p.isHidden);
 
     const q = searchQuery.toLowerCase().trim();
     if (!q) return visibleProducts;
@@ -60,10 +63,12 @@ export function SelectProductDialog({
         const group = (p.group || "").toLowerCase();
         
         if (isCodeSearch && isQueryNumeric) {
+            // البحث الدقيق بالكود (من اليمين لليسار لسد فجوات الأصفار)
             if (code.endsWith(q)) {
                 const indexBefore = code.length - q.length - 1;
                 if (indexBefore >= 0) {
                     const charBefore = code[indexBefore];
+                    // التأكد أن ما قبل الرقم المدخل ليس رقمًا حقيقياً لتجنب تطابق جزئي خاطئ
                     if (/[1-9]/.test(charBefore)) return false;
                 }
                 return true;
@@ -77,7 +82,7 @@ export function SelectProductDialog({
             );
         }
     });
-  }, [products, searchQuery, isCodeSearch]);
+  }, [uniqueProducts, searchQuery, isCodeSearch]);
 
   const getCategoryBadge = (category: string) => {
       switch(category) {
@@ -139,28 +144,14 @@ export function SelectProductDialog({
                   <div className="flex justify-between items-center w-full gap-4">
                     <div className="flex flex-col text-right flex-1">
                         <div className='flex items-center gap-2 mb-1'>
-                            <span className={cn("font-bold text-sm", bookedProductIds?.has(product.id) && "text-destructive")}>
-                              {product.name} - مقاس {product.size}
-                            </span>
+                            <span className="font-bold text-sm">{product.name} - مقاس {product.size}</span>
                             {getCategoryBadge(product.category)}
-                            {bookedProductIds?.has(product.id) && (
-                              <Badge variant="destructive" className="flex items-center gap-1 text-[10px] animate-pulse">
-                                <CalendarX2 className="h-3 w-3" />
-                                محجوز
-                              </Badge>
-                            )}
                         </div>
                         <div className='flex items-center gap-3 text-[10px] text-muted-foreground font-mono'>
                             <span className='flex items-center gap-1'><Hash className='h-2.5 w-2.5'/> {product.productCode}</span>
                             <span className='flex items-center gap-1'><ShoppingBag className='h-2.5 w-2.5'/> {product.price} ج.م</span>
                             {product.group && <span className='opacity-70'>{product.group}</span>}
                         </div>
-                        {bookedProductIds?.has(product.id) && (
-                          <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3" />
-                            هذه القطعة مؤجرة في الفترة المحددة — اختيارها سيمنع حفظ الطلب
-                          </p>
-                        )}
                     </div>
                     {selectedProductId === product.id && <div className='w-2 h-2 rounded-full bg-primary' />}
                   </div>

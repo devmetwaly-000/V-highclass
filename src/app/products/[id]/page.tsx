@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, useState, use } from 'react';
@@ -195,7 +194,7 @@ function ProductDetailsPageContent({
       />
       <PageHeader title={`${product.name} - مقاس ${product.size}`} showBackButton>
         <div className="flex flex-col gap-2 w-full sm:w-48">
-          {(product.category === 'sale' || product.category === 'both') && permissions.canProductsAddStock && <AddStockDialog product={product} />}
+          {permissions.canProductsAddStock && <AddStockDialog product={product} />}
           {permissions.canProductsEdit && <AddProductDialog product={product} trigger={
             <Button variant="outline" size="sm" className="gap-1 w-full justify-start">
               <Pencil className="h-4 w-4" /> تعديل البيانات
@@ -275,7 +274,7 @@ function ProductDetailsPageContent({
                   </CardHeader>
                   <CardContent className="grid gap-2 text-sm">
                       <div className="flex justify-between">
-                          <span>الكمية الأولية:</span>
+                          <span>الكمية الأولية (الإجمالي):</span>
                           <span className="font-semibold">{product.initialStock}</span>
                       </div>
                        <div className="flex justify-between text-green-600 font-bold">

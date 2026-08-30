@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -58,6 +57,7 @@ export function AddStockDialog({ product }: AddStockDialogProps) {
     try {
       await runTransaction(productRef, (currentData) => {
         if (currentData) {
+          const nowISO = new Date().toISOString();
           const movementRef = push(ref(db, `products/${product.id}/stockMovements`));
           
           const quantityBefore = currentData.quantityInStock || 0;
@@ -65,7 +65,7 @@ export function AddStockDialog({ product }: AddStockDialogProps) {
 
           const newMovement: StockMovement = {
               id: movementRef.key!,
-              date: new Date().toISOString(),
+              date: nowISO,
               type: 'edit', 
               quantity: adjustment,
               quantityBefore: quantityBefore,
@@ -75,7 +75,11 @@ export function AddStockDialog({ product }: AddStockDialogProps) {
               userName: appUser.fullName,
           };
           
+          // تحديث الرصيد الحالي
           currentData.quantityInStock = quantityAfter;
+          // تحديث الكمية الأولية (الإجمالي) لضمان ثبات حسابات الجرد
+          currentData.initialStock = (currentData.initialStock || 0) + adjustment;
+          currentData.updatedAt = nowISO;
           
           if (!currentData.stockMovements) {
             currentData.stockMovements = {};
@@ -138,10 +142,11 @@ export function AddStockDialog({ product }: AddStockDialogProps) {
             <Input
               id="adjustment"
               type="number"
-              value={adjustment}
+              value={adjustment || ''}
               onChange={(e) => setAdjustment(parseInt(e.target.value) || 0)}
               className="col-span-3 text-center"
               placeholder="+/- الكمية"
+              autoFocus
             />
           </div>
            <div className="grid grid-cols-4 items-center gap-4">

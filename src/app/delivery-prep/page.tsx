@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -13,6 +14,7 @@ import {
   DollarSign,
   UserCheck,
   RotateCcw,
+  XCircle,
 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,7 +34,6 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { format, addDays, startOfDay, endOfDay } from 'date-fns';
 import type { Order, Branch, User } from '@/lib/definitions';
-import Link from 'next/link';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useUser, useDatabase } from '@/firebase';
 import { ref, update } from 'firebase/database';
@@ -71,7 +72,7 @@ function formatDate(dateString?: string | Date) {
 
 
 function DeliveryPrepPageContent() {
-  const [fromDate, setFromDate] = useState<Date | undefined>(addDays(new Date(), -30));
+  const [fromDate, setFromDate] = useState<Date | undefined>(addDays(new Date(), -14));
   const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 30));
   const [selectedBranch, setSelectedBranch] = useState('all');
   
@@ -82,12 +83,12 @@ function DeliveryPrepPageContent() {
   const db = useDatabase();
   const { toast } = useToast();
   const { settings, isLoading: isLoadingSettings } = useSettings();
-  const { data: allOrders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+  const { data: allOrders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries', { limit: 500 });
   const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
   const { data: users } = useRtdbList<User>('users');
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(['orders:add-payment'] as const);
 
-  const isLoading = isLoadingOrders || isLoadingBranches || isLoadingSettings || isLoadingPermissions;
+  const isLoading = isLoadingOrders || isLoadingBranches;
   
   const filteredOrders = useMemo(() => {
     if (isLoading) return [];
@@ -96,20 +97,31 @@ function DeliveryPrepPageContent() {
     const end = toDate ? endOfDay(toDate) : null;
 
     return allOrders.filter(order => {
+        // استبعاد الملغي والمرتجع
         if (order.status === 'Cancelled' || order.status === 'Returned') return false;
-        if (!order.deliveryDate) return false;
         
-        const deliveryDate = new Date(order.deliveryDate);
-        const dateMatch = (!start || deliveryDate >= start) && (!end || deliveryDate <= end);
-        
+        // التصفية بالفرع
         let branchMatch = selectedBranch === 'all';
         if (appUser?.branchId && appUser.branchId !== 'all') {
             branchMatch = order.branchId === appUser.branchId;
         } else if (selectedBranch !== 'all') {
             branchMatch = order.branchId === selectedBranch;
         }
+        if (!branchMatch) return false;
 
-        return dateMatch && branchMatch;
+        // التصفية بالتاريخ (تاريخ التسليم هو الأساس في هذه الشاشة)
+        if (order.deliveryDate) {
+            const dDate = new Date(order.deliveryDate);
+            if (start && dDate < start) return false;
+            if (end && dDate > end) return false;
+        } else if (start || end) {
+            // إذا لم يوجد تاريخ تسليم وكان هناك فلتر تاريخ، نستخدم تاريخ الطلب
+            const oDate = new Date(order.orderDate);
+            if (start && oDate < start) return false;
+            if (end && oDate > end) return false;
+        }
+
+        return true;
     });
   }, [allOrders, fromDate, toDate, selectedBranch, appUser, isLoading]);
 
@@ -203,12 +215,16 @@ function DeliveryPrepPageContent() {
       </Dialog>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
             <div className="flex items-center gap-2">
                 <Filter className="h-5 w-5 text-primary" />
                 <CardTitle>فلترة طلبات التجهيز والتسليم</CardTitle>
             </div>
-            <CardDescription>يتم عرض الطلبات بناءً على "تاريخ التسليم" المجدد في الفاتورة.</CardDescription>
+            {(fromDate || toDate || selectedBranch !== 'all') && (
+                <Button variant="ghost" size="sm" onClick={() => { setFromDate(undefined); setToDate(undefined); setSelectedBranch('all'); }} className="h-8 gap-1 text-destructive">
+                    <XCircle className="h-4 w-4" /> مسح الفلاتر
+                </Button>
+            )}
         </CardHeader>
         <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
@@ -278,11 +294,11 @@ function DeliveryPrepPageContent() {
                             </TableRow>
                         ) : pendingOrders.map(order => (
                              <TableRow key={order.id}>
-                                <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
+                                <TableCell className="text-center font-mono font-bold text-primary">{order.orderCode}</TableCell>
                                 <TableCell className="text-right">{order.customerName}</TableCell>
                                 <TableCell className="text-right font-medium">{getOrderSummary(order.items)}</TableCell>
                                 <TableCell className="text-right">{order.branchName}</TableCell>
-                                <TableCell className="text-center">{formatDate(order.deliveryDate)}</TableCell>
+                                <TableCell className="text-center font-mono text-xs">{formatDate(order.deliveryDate)}</TableCell>
                                 <TableCell className="text-center"><Badge variant="destructive">قيد التجهيز</Badge></TableCell>
                                  <TableCell className="text-center">
                                     <div className="flex gap-2 justify-center">
@@ -336,11 +352,11 @@ function DeliveryPrepPageContent() {
                               </TableRow>
                           ) : fromTailorOrders.map(order => (
                               <TableRow key={order.id}>
-                                  <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
+                                  <TableCell className="text-center font-mono font-bold text-primary">{order.orderCode}</TableCell>
                                   <TableCell className="text-right">{order.customerName}</TableCell>
                                   <TableCell className="text-right font-medium">{getOrderSummary(order.items)}</TableCell>
                                   <TableCell className="text-right">{order.branchName}</TableCell>
-                                  <TableCell className="text-center">{formatDate(order.deliveryDate)}</TableCell>
+                                  <TableCell className="text-center font-mono text-xs">{formatDate(order.deliveryDate)}</TableCell>
                                   <TableCell className="text-center"><Badge className="bg-purple-500 text-white">عند الخياط</Badge></TableCell>
                                   <TableCell className="text-center">
                                       <div className="flex gap-2 justify-center">
@@ -399,11 +415,11 @@ function DeliveryPrepPageContent() {
                             </TableRow>
                         ) : readyOrders.map(order => (
                             <TableRow key={order.id}>
-                                <TableCell className="text-center font-mono">{order.orderCode}</TableCell>
+                                <TableCell className="text-center font-mono font-bold text-primary">{order.orderCode}</TableCell>
                                 <TableCell className="text-right">{order.customerName}</TableCell>
                                 <TableCell className="text-right font-medium">{getOrderSummary(order.items)}</TableCell>
                                 <TableCell className="text-right">{order.branchName}</TableCell>
-                                <TableCell className="text-center">{formatDate(order.deliveryDate)}</TableCell>
+                                <TableCell className="text-center font-mono text-xs">{formatDate(order.deliveryDate)}</TableCell>
                                 <TableCell className={cn("text-center font-mono font-semibold", order.remainingAmount > 0 ? 'text-destructive' : 'text-green-600')}>{order.remainingAmount.toLocaleString()} ج.م</TableCell>
                                 <TableCell className="text-center"><Badge className="bg-yellow-500 text-black">جاهز</Badge></TableCell>
                                 <TableCell className="text-center">

@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -12,10 +12,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from './ui/button';
-import { HiClassLogo } from './icons';
+import { Badge } from './ui/badge';
+import { Checkbox } from './ui/checkbox';
+import { Label } from './ui/label';
 import { Separator } from './ui/separator';
-import type { Order } from '@/lib/definitions';
+import type { Order, OrderItem } from '@/lib/definitions';
 import { useSettings } from '@/hooks/use-settings';
+import { cn } from '@/lib/utils';
+import { Printer, Scissors, AlertTriangle, CheckCircle2, ListChecks } from 'lucide-react';
 
 const DottedSeparator = () => (
     <div style={{
@@ -25,50 +29,70 @@ const DottedSeparator = () => (
     }}></div>
 );
 
-const TailorReceiptContent = React.forwardRef<HTMLDivElement, { order: Order, settings: any }>(({ order, settings }, ref) => {
-    const itemsWithNotesOrMeasurements = order.items.filter(item => item.tailorNotes || item.measurements);
-
+/**
+ * مكون الوصل الفردي لصنف واحد
+ */
+const SingleItemTailorReceipt = ({ order, item, settings }: { order: Order, item: OrderItem, settings: any }) => {
     return (
-        <div ref={ref} className="w-[72mm] mx-auto bg-white text-black p-3 font-headline text-right" style={{ boxSizing: 'border-box' }}>
+        <div className="tailor-receipt-page" style={{ 
+            width: '72mm', 
+            margin: '0 auto', 
+            backgroundColor: 'white', 
+            color: 'black', 
+            padding: '3mm',
+            boxSizing: 'border-box',
+            pageBreakAfter: 'always'
+        }}>
             <div className="text-center mb-2">
                 {settings.tailor_showShopName && <h2 className="text-xl font-bold font-headline -mt-2">{settings.tailor_shopName}</h2>}
                 {settings.tailor_showContact && <p className="text-sm mt-1">{settings.tailor_contactInfo}</p>}
+                <p className="text-[10px] font-bold mt-1 border border-black p-1 rounded-sm">وصل تجهيز صنف</p>
             </div>
 
             <DottedSeparator />
 
-            <div className="space-y-1.5 text-sm">
+            <div className="space-y-1.5 text-[11px]">
                 <div className="flex justify-between"><span>رقم الطلب:</span> <span className="font-bold">{order.orderCode}</span></div>
                 <div className="flex justify-between"><span>التاريخ:</span> <span>{new Date(order.orderDate).toLocaleDateString('ar-EG')}</span></div>
-                <div className="flex justify-between"><span>اسم العميل:</span> <span className="font-bold">{order.customerName}</span></div>
-                {order.deliveryDate && <div className="flex justify-between"><span>تاريخ التسليم:</span> <span className="font-bold">{new Date(order.deliveryDate).toLocaleDateString('ar-EG')}</span></div>}
+                <div className="flex justify-between"><span>العميل:</span> <span className="font-bold">{order.customerName}</span></div>
+                {order.deliveryDate && <div className="flex justify-between"><span>موعد التسليم:</span> <span className="font-bold">{new Date(order.deliveryDate).toLocaleDateString('ar-EG')}</span></div>}
             </div>
             
             <DottedSeparator />
 
-            <h3 className="font-bold text-lg mb-3">تفاصيل التعديلات:</h3>
-            {itemsWithNotesOrMeasurements.map((item, index) => (
-                <div key={index} className="mb-4 text-sm">
-                     <p className="font-bold text-base bg-muted/20 p-1">{item.productName}{item.measurements ? ` - ${item.measurements}` : ''}</p>
-                    {item.tailorNotes && (
+            <div className="mb-4">
+                <h3 className="font-bold text-base mb-2 underline">بيانات الصنف والتعديلات:</h3>
+                <div className="bg-gray-50 p-2 border border-black mb-2">
+                    <p className="font-bold text-sm">{item.productName}</p>
+                    <p className="text-[10px] font-mono text-gray-600">كود: {item.productCode}</p>
+                </div>
+
+                {item.measurements && (
+                    <div className="mb-2">
+                        <p className="text-[10px] font-bold">القياسات:</p>
+                        <p className="text-sm p-1 border border-dashed border-gray-400">{item.measurements}</p>
+                    </div>
+                )}
+
+                {item.tailorNotes && (
+                    <div>
+                        <p className="text-[10px] font-bold">التعديلات المطلوبة:</p>
                         <div className="border border-black p-2 text-base font-medium leading-relaxed whitespace-pre-wrap mt-1">
                            {item.tailorNotes}
                         </div>
-                    )}
-                </div>
-            ))}
+                    </div>
+                )}
+            </div>
             
             <DottedSeparator />
-            <p className="text-center whitespace-pre-wrap text-xs font-medium mt-3">{settings.tailor_disclaimer}</p>
+            <p className="text-center whitespace-pre-wrap text-[9px] font-medium leading-tight">{settings.tailor_disclaimer}</p>
 
-            <div style={{ borderTop: '1px solid #000', marginTop: '15px', paddingTop: '8px', textAlign: 'center', fontSize: '10px' }}>
+            <div style={{ borderTop: '1px solid #000', marginTop: '10px', paddingTop: '5px', textAlign: 'center', fontSize: '9px' }}>
                 www.codlink.online
             </div>
         </div>
     );
-});
-TailorReceiptContent.displayName = 'TailorReceiptContent';
-
+};
 
 type PrintTailorReceiptDialogProps = {
     order: Order;
@@ -76,19 +100,47 @@ type PrintTailorReceiptDialogProps = {
 }
 
 export function PrintTailorReceiptDialog({ order, trigger }: PrintTailorReceiptDialogProps) {
-    const [isMounted, setIsMounted] = useState(false);
+    const [open, setOpen] = useState(false);
     const { settings, isLoading: isLoadingSettings } = useSettings();
-    const componentRef = useRef<HTMLDivElement>(null);
+    const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
+    const printContainerRef = useRef<HTMLDivElement>(null);
+
+    // تصفية الأصناف التي لها ملاحظات أو قياسات فقط
+    const eligibleItems = useMemo(() => {
+        return order.items
+            .map((item, index) => ({ item, index }))
+            .filter(({ item }) => item.tailorNotes || item.measurements);
+    }, [order.items]);
+
+    // تحديد الكل تلقائياً عند الفتح
+    useEffect(() => {
+        if (open) {
+            setSelectedIndices(eligibleItems.map(ei => ei.index));
+        }
+    }, [open, eligibleItems]);
+
+    const toggleItem = (index: number) => {
+        setSelectedIndices(prev => 
+            prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
+        );
+    };
+
+    const toggleAll = () => {
+        if (selectedIndices.length === eligibleItems.length) {
+            setSelectedIndices([]);
+        } else {
+            setSelectedIndices(eligibleItems.map(ei => ei.index));
+        }
+    };
 
     const handlePrint = () => {
-        const content = componentRef.current?.outerHTML;
-        if (!content) return;
+        const content = printContainerRef.current?.innerHTML;
+        if (!content || selectedIndices.length === 0) return;
 
         const printWindow = window.open('', '', 'height=800,width=400');
         if (printWindow) {
-            printWindow.document.write('<html><head><title>Print Tailor Receipt</title>');
+            printWindow.document.write('<html><head><title>Print Tailor Receipts</title>');
             printWindow.document.write('<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet" />');
-            printWindow.document.write('<link href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@400;700&display=swap" rel="stylesheet" />');
             printWindow.document.write(`
                 <style>
                     @page { size: 72mm auto; margin: 0; }
@@ -101,39 +153,20 @@ export function PrintTailorReceiptDialog({ order, trigger }: PrintTailorReceiptD
                         print-color-adjust: exact;
                     }
                     * { box-sizing: border-box; }
-                    .font-headline { font-family: "Tajawal", sans-serif; font-weight: 700; }
-                    .font-ruqaa { font-family: "Aref Ruqaa", serif; } 
-                    .text-xs { font-size: 0.85rem; line-height: 1.3; }
-                    .text-sm { font-size: 1.0rem; line-height: 1.3; }
-                    .text-base { font-size: 1.15rem; line-height: 1.4; }
-                    .text-lg { font-size: 1.3rem; }
-                    .text-xl { font-size: 1.5rem; }
-                    .text-2xl { font-size: 1.8rem; }
+                    .tailor-receipt-page {
+                        page-break-after: always;
+                    }
+                    .tailor-receipt-page:last-child {
+                        page-break-after: auto;
+                    }
+                    h2, h3, p, span, div { margin: 0; padding: 0; }
                     .font-bold { font-weight: 700; }
-                    .font-semibold { font-weight: 600; }
-                    .font-medium { font-weight: 500; }
                     .text-center { text-align: center; }
                     .text-right { text-align: right; }
-                    .mx-auto { margin-left: auto; margin-right: auto; }
-                    .mb-2 { margin-bottom: 0.5rem; }
-                    .mb-3 { margin-bottom: 0.75rem; }
-                    .mb-4 { margin-bottom: 1rem; }
-                    .-mt-2 { margin-top: -0.5rem; }
-                    .mt-1 { margin-top: 0.25rem; }
-                    .mt-3 { margin-top: 0.75rem; }
-                    .p-1 { padding: 0.25rem; }
-                    .p-2 { padding: 0.5rem; }
-                    .p-3 { padding: 0.75rem; }
                     .flex { display: flex; }
-                    .grid { display: grid; }
-                    .items-start { align-items: flex-start; }
                     .justify-between { justify-content: space-between; }
-                    .space-y-1\\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.375rem; }
-                    .border { border-width: 1px; border-color: #000; border-style: solid; }
-                    .border-black { border-color: #000; }
-                    .leading-relaxed { line-height: 1.625; }
+                    .border { border: 1px solid #000; }
                     .whitespace-pre-wrap { white-space: pre-wrap; }
-                    h2, h3, p, span, div { margin: 0; padding: 0; }
                 </style>
             `);
             printWindow.document.write('</head><body>');
@@ -145,34 +178,99 @@ export function PrintTailorReceiptDialog({ order, trigger }: PrintTailorReceiptD
             setTimeout(() => {
                 printWindow.print();
                 printWindow.close();
-            }, 100);
+            }, 250);
         }
     };
-    
-    useEffect(() => {
-        setIsMounted(true);
-    }, []);
 
-    if (!isMounted || isLoadingSettings) {
-        return <>{trigger}</>
-    }
+    if (isLoadingSettings) return <>{trigger}</>;
 
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        {trigger}
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>معاينة طباعة وصل الخياط</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col items-center justify-start gap-6 py-4 bg-muted rounded-md max-h-[65vh] overflow-y-auto w-full scrollbar-thin scrollbar-thumb-primary/20">
-            <TailorReceiptContent ref={componentRef} order={order} settings={settings} />
-        </div>
-        <DialogFooter>
-          <Button type="button" onClick={handlePrint} className="w-full">طباعة الوصل</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                {trigger}
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-lg text-right" dir="rtl">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-right">
+                        <Scissors className="h-5 w-5 text-primary" />
+                        طباعة أوصال الخياط
+                    </DialogTitle>
+                    <DialogDescription className="text-right">
+                        حدد الأصناف التي ترغب في طباعة وصل تعديلات منفصل لها. سيتم إنشاء وصل مستقل لكل قطعة مختارة.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="py-4 space-y-4">
+                    {eligibleItems.length > 0 ? (
+                        <>
+                            <div className="flex items-center justify-between px-2 mb-2">
+                                <Label className="text-xs font-bold text-muted-foreground">قائمة الأصناف (التي لها تعديلات أو قياسات):</Label>
+                                <Button variant="ghost" size="sm" onClick={toggleAll} className="h-7 text-[10px] gap-1">
+                                    <ListChecks className="h-3 w-3" />
+                                    {selectedIndices.length === eligibleItems.length ? "إلغاء تحديد الكل" : "تحديد الكل"}
+                                </Button>
+                            </div>
+                            <div className="grid gap-2 max-h-[40vh] overflow-y-auto pr-1">
+                                {eligibleItems.map(({ item, index }) => (
+                                    <div 
+                                        key={index} 
+                                        className={cn(
+                                            "flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer hover:bg-muted/50",
+                                            selectedIndices.includes(index) ? "border-primary bg-primary/5" : "bg-card"
+                                        )}
+                                        onClick={() => toggleItem(index)}
+                                    >
+                                        <Checkbox 
+                                            id={`item-${index}`} 
+                                            checked={selectedIndices.includes(index)} 
+                                            onCheckedChange={() => toggleItem(index)}
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                        <div className="flex-grow space-y-1">
+                                            <div className="flex justify-between items-center">
+                                                <Label htmlFor={`item-${index}`} className="font-bold cursor-pointer text-sm">{item.productName}</Label>
+                                                <Badge variant="outline" className="font-mono text-[10px]">{item.productCode}</Badge>
+                                            </div>
+                                            <p className="text-[11px] text-muted-foreground line-clamp-1">
+                                                {item.tailorNotes || "قياسات فقط"}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="p-8 text-center text-muted-foreground border-2 border-dashed rounded-xl flex flex-col items-center gap-3">
+                            <AlertTriangle className="h-10 w-10 opacity-20" />
+                            <p>لا توجد أصناف في هذه الفاتورة تحتوي على ملاحظات خياط أو قياسات.</p>
+                        </div>
+                    )}
+                </div>
+
+                {/* حاوية مخفية للطباعة */}
+                <div className="hidden">
+                    <div ref={printContainerRef}>
+                        {eligibleItems
+                            .filter(ei => selectedIndices.includes(ei.index))
+                            .map(({ item }, i) => (
+                                <SingleItemTailorReceipt key={i} order={order} item={item} settings={settings} />
+                            ))
+                        }
+                    </div>
+                </div>
+
+                <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={() => setOpen(false)} className="flex-1">إلغاء</Button>
+                    <Button 
+                        onClick={handlePrint} 
+                        disabled={selectedIndices.length === 0} 
+                        className="flex-1 gap-2 bg-primary text-primary-foreground h-11 font-bold"
+                    >
+                        <Printer className="h-5 w-5" />
+                        طباعة ({selectedIndices.length}) وصل
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
 }
