@@ -46,7 +46,7 @@ export type Region = {
 export type StockMovement = {
   id: string;
   date: string; // ISO string
-  type: 'addition' | 'sale' | 'return' | 'initial' | 'edit' | 'rental_out' | 'rental_in';
+  type: 'addition' | 'sale' | 'return' | 'initial' | 'edit' | 'inventory' | 'rental_out' | 'rental_in';
   quantity: number; // can be + or -
   quantityBefore: number;
   quantityAfter: number;

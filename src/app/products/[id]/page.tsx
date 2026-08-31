@@ -324,6 +324,7 @@ function ProductDetailsPageContent({
                                       {move.type === 'sale' && <Badge variant="destructive" className="gap-1 bg-red-100 text-red-800 border-red-300"><TrendingDown className="h-3 w-3"/> صرف بيع</Badge>}
                                       {move.type === 'initial' && <Badge variant="outline">رصيد افتتاحي</Badge>}
                                       {move.type === 'edit' && <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-300">تعديل يدوي</Badge>}
+                                      {move.type === 'inventory' && <Badge variant="outline" className="bg-indigo-100 text-indigo-800 border-indigo-300">جرد مخزني</Badge>}
                                       {move.type === 'rental_out' && <Badge variant="destructive" className="gap-1 bg-orange-100 text-orange-800 border-orange-300"><ArrowUpRight className="h-3 w-3"/> خروج إيجار</Badge>}
                                       {move.type === 'rental_in' && <Badge variant="default" className="gap-1 bg-teal-100 text-teal-800 border-teal-300"><ArrowDownLeft className="h-3 w-3"/> رجوع إيجار</Badge>}
                                     </TableCell>

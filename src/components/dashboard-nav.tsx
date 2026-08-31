@@ -23,6 +23,7 @@ import {
   CircleDollarSign,
   Wallet,
   MapPin,
+  ClipboardList,
 } from 'lucide-react';
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from './ui/sidebar';
 import { cn } from '@/lib/utils';
@@ -50,6 +51,7 @@ const navGroups = [
       { href: '/delivery-prep', label: 'تجهيز الطلبات', icon: Truck, permission: 'delivery-prep:view' },
       { href: '/returns', label: 'استلام المرتجعات', icon: Undo2, permission: 'returns:view' },
       { href: '/inventory-check', label: 'استعلام عن صنف', icon: PackageSearch, permission: 'inventory-check:view' },
+      { href: '/product-inventory', label: 'جرد المخزون', icon: ClipboardList, permission: 'products:add-stock' },
       { href: '/purchases', label: 'المشتريات', icon: PackagePlus, permission: 'purchases:view' },
       { href: '/sale-returns', label: 'مرتجعات البيع', icon: Undo, permission: 'sale-returns:view' },
       { href: '/purchase-returns', label: 'مرتجعات المشتريات', icon: Undo, permission: 'purchase-returns:view' },

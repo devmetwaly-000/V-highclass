@@ -79,6 +79,7 @@ const followupNavItems = [
 
 const inventoryNavItems = [
     { href: '/inventory-check', label: 'استعلام عن منتج', description: 'البحث عن حالة وتوفر منتج معين.', icon: PackageSearch, permission: 'inventory-check:view' },
+    { href: '/product-inventory', label: 'جرد المخزون', description: 'جرد سريع للمخزون يدوياً أو عبر Excel.', icon: ClipboardList, permission: 'products:add-stock' },
     { href: '/purchases', label: 'المشتريات', description: 'تسجيل فواتير الشراء من الموردين.', icon: PackagePlus, permission: 'purchases:view' },
     { href: '/sale-returns', label: 'مرتجعات البيع', description: 'تسجيل مرتجعات المبيعات من العملاء.', icon: Undo, permission: 'sale-returns:view' },
     { href: '/purchase-returns', label: 'مرتجعات المشتريات', description: 'تسجيل مرتجعات البضاعة للموردين.', icon: Undo, permission: 'purchase-returns:view' },
