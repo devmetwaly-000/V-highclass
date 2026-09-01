@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Trash2,
   CheckCircle,
@@ -15,7 +15,8 @@ import {
   Calculator,
   AlertCircle,
   PlusCircle,
-  Hash
+  Hash,
+  CalendarX2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -55,6 +56,9 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { useSettings } from '@/hooks/use-settings';
 import { Switch } from '@/components/ui/switch';
 import { db } from '@/lib/db';
+import { getNextOrderCode } from '@/lib/order-counter';
+import { checkRentalConflict, type ConflictResult } from '@/lib/rental-conflict';
+import { RentalConflictAlertDialog } from '@/components/rental-conflict-alert-dialog';
 
 type OrderItemState = {
   id: string;
@@ -83,6 +87,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const { data: customers } = useRtdbList<Customer>('customers');
   const { data: branches } = useRtdbList<Branch>('branches');
   const { data: regions } = useRtdbList<Region>('regions');
+  const { data: allOrders } = useRtdbList<Order>('daily-entries');
   
   const dbRTDB = useDatabase();
   const { toast } = useToast();
@@ -112,6 +117,8 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
   const [showStartShiftDialog, setShowStartShiftDialog] = useState(false);
   const { permissions } = usePermissions(['orders:apply-discount'] as const);
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
+  const [showConflictDialog, setShowConflictDialog] = useState(false);
+  const prevConflictCountRef = useRef(0);
 
   useEffect(() => {
       const loadProducts = async () => {
@@ -156,6 +163,64 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
     if (!branchId) return [];
     return cachedProducts.filter((p) => p.branchId === branchId || p.showInAllBranches);
   }, [branchId, cachedProducts]);
+
+  const bookedProductIds = useMemo<Set<string>>(() => {
+    if (transactionType !== 'Rental' || !deliveryDate || !returnDate) return new Set();
+    const ids = new Set<string>();
+    for (const product of availableProducts) {
+      const result = checkRentalConflict(
+        product.id,
+        deliveryDate,
+        returnDate,
+        allOrders,
+        order?.id,
+      );
+      if (result.hasConflict) ids.add(product.id);
+    }
+    return ids;
+  }, [availableProducts, deliveryDate, returnDate, transactionType, allOrders, order?.id]);
+
+  const itemConflicts = useMemo<Map<string, ConflictResult>>(() => {
+    if (transactionType !== 'Rental' || !deliveryDate || !returnDate) return new Map();
+    const map = new Map<string, ConflictResult>();
+    for (const item of orderItems) {
+      if (!item.productId) continue;
+      const itemType = item.itemTransactionType || transactionType;
+      if (itemType !== 'Rental') continue;
+      const result = checkRentalConflict(
+        item.productId,
+        deliveryDate,
+        returnDate,
+        allOrders,
+        order?.id,
+      );
+      if (result.hasConflict) map.set(item.id, result);
+    }
+    return map;
+  }, [orderItems, deliveryDate, returnDate, transactionType, allOrders, order?.id]);
+
+  const conflictingItemsList = useMemo(
+    () =>
+      orderItems
+        .filter((i) => itemConflicts.has(i.id))
+        .map((i) => ({
+          id: i.id,
+          productId: i.productId,
+          productName: i.productName,
+          conflict: itemConflicts.get(i.id)!,
+        })),
+    [orderItems, itemConflicts],
+  );
+
+  const hasOrderConflicts = conflictingItemsList.length > 0;
+
+  useEffect(() => {
+    const count = itemConflicts.size;
+    if (count > 0 && prevConflictCountRef.current === 0) {
+      setShowConflictDialog(true);
+    }
+    prevConflictCountRef.current = count;
+  }, [itemConflicts.size]);
 
   useEffect(() => {
     if (isEditMode && order) {
@@ -246,6 +311,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
 
   const handleSaveOrder = async () => {
     if (isSaving) return;
+
+    if (hasOrderConflicts) {
+        setShowConflictDialog(true);
+        return;
+    }
     
     if (!branchId || !customerId || !transactionType || !sellerId) {
         toast({ variant: 'destructive', title: 'بيان ناقص', description: 'الرجاء التأكد من تعبئة كافة الحقول المطلوبة.' });
@@ -288,17 +358,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         let finalOrderCode = order?.orderCode || "";
 
         if (!isEditMode) {
-            const counterRef = ref(dbRTDB, 'counters/orders');
-            const res = await runTransaction(counterRef, c => { 
-                if (!c) return { value: 70000001 }; 
-                c.value++; 
-                return c; 
-            });
-
-            if (!res.committed || !res.snapshot.exists()) {
-                throw new Error("فشل النظام في توليد رقم فاتورة جديد.");
-            }
-            finalOrderCode = res.snapshot.val().value.toString();
+            finalOrderCode = await getNextOrderCode(dbRTDB, branchId);
         }
 
         const datePath = isEditMode ? (order!.datePath || format(new Date(order!.orderDate), 'yyyy-MM-dd')) : format(new Date(), 'yyyy-MM-dd');
@@ -584,7 +644,11 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                         <span>يجب اختيار الفرع أولاً</span>
                                     </div>
                                 ) : (
-                                    <SelectProductDialog products={availableProducts} onProductSelected={p => {
+                                    <>
+                                    <SelectProductDialog
+                                        products={availableProducts}
+                                        bookedProductIds={bookedProductIds}
+                                        onProductSelected={p => {
                                         const prod = cachedProducts.find(x => x.id === p);
                                         if(prod) {
                                             const itType = (prod.category === 'both' ? (transactionType as any || 'Rental') : (prod.category === 'sale' ? 'Sale' : 'Rental'));
@@ -603,6 +667,13 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                                             });
                                         }
                                     }} selectedProductId={item.productId} disabled={!branchId || isProductsLoading} />
+                                    {itemConflicts.has(item.id) && (
+                                        <p className="flex items-center gap-1 mt-1 text-[10px] text-destructive font-medium">
+                                            <CalendarX2 className="h-3 w-3 shrink-0" />
+                                            Item already booked for this timeframe.
+                                        </p>
+                                    )}
+                                    </>
                                 )}
                             </div>
                             <div className="col-span-3 lg:col-span-2">
@@ -715,9 +786,21 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
                 </div>
             </CardContent>
         </Card>
-        <Button onClick={handleSaveOrder} className="w-full h-12 text-lg font-bold gap-2" disabled={isSaving}>
+        <RentalConflictAlertDialog
+            open={showConflictDialog}
+            onOpenChange={setShowConflictDialog}
+            conflictingItems={conflictingItemsList}
+        />
+        <Button
+            onClick={handleSaveOrder}
+            className={cn(
+                "w-full h-12 text-lg font-bold gap-2",
+                hasOrderConflicts && "bg-muted text-muted-foreground hover:bg-muted/80 border border-destructive/30"
+            )}
+            disabled={isSaving}
+        >
             {isSaving ? <Loader2 className="h-5 w-5 animate-spin ml-2" /> : null}
-            {isEditMode ? 'تحديث بيانات الطلب' : 'حفظ الطلب'}
+            {isEditMode ? 'تحديث بيانات الطلب' : hasOrderConflicts ? 'لا يمكن حفظ الطلب — يوجد تعارض' : 'حفظ الطلب'}
         </Button>
     </div>
   );

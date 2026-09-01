@@ -18,8 +18,9 @@ import { useDatabase, useUser } from '@/firebase';
 import { ref, update, runTransaction, push, set } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order, Shift, Product, StockMovement, Expense } from '@/lib/definitions';
+import type { Order, Shift, Product, Expense } from '@/lib/definitions';
 import { format } from 'date-fns';
+import { runProductStockTransaction } from '@/lib/stock-movements';
 import { Label } from './ui/label';
 import {
   Select,
@@ -69,37 +70,30 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
 
             // 1. Return Stock
             for (const item of order.items) {
-                const productRef = ref(db, `products/${item.productId}`);
-                await runTransaction(productRef, (currentProduct: Product) => {
-                    if (currentProduct) {
-                        const itemType = item.itemTransactionType || order.transactionType;
-                        const quantityBefore = currentProduct.quantityInStock || 0;
-                        currentProduct.quantityInStock = quantityBefore + item.quantity;
-                        
-                        if (itemType === 'Sale') {
-                            currentProduct.quantitySold = Math.max(0, (currentProduct.quantitySold || 0) - item.quantity);
-                        } else if (itemType === 'Rental') {
-                            currentProduct.quantityRented = Math.max(0, (currentProduct.quantityRented || 0) - item.quantity);
-                        }
+                await runProductStockTransaction(db, item.productId, (currentProduct) => {
+                    const itemType = item.itemTransactionType || order.transactionType;
+                    const quantityBefore = currentProduct.quantityInStock || 0;
+                    currentProduct.quantityInStock = quantityBefore + item.quantity;
 
-                        const movementRef = push(ref(db, `products/${item.productId}/stockMovements`));
-                        const newMovement: StockMovement = {
-                            id: movementRef.key!,
-                            date: nowISO,
-                            type: 'return',
-                            quantity: item.quantity,
-                            quantityBefore: quantityBefore,
-                            quantityAfter: currentProduct.quantityInStock,
-                            notes: `إلغاء الطلب ${order.orderCode}`,
-                            orderCode: order.orderCode,
-                            userId: appUser.id,
-                            userName: appUser.fullName,
-                        };
-                        if (!currentProduct.stockMovements) currentProduct.stockMovements = {};
-                        currentProduct.stockMovements[newMovement.id] = newMovement;
-                        currentProduct.updatedAt = nowISO;
+                    if (itemType === 'Sale') {
+                        currentProduct.quantitySold = Math.max(0, (currentProduct.quantitySold || 0) - item.quantity);
+                    } else if (itemType === 'Rental') {
+                        currentProduct.quantityRented = Math.max(0, (currentProduct.quantityRented || 0) - item.quantity);
                     }
-                    return currentProduct;
+
+                    currentProduct.updatedAt = nowISO;
+
+                    return {
+                        date: nowISO,
+                        type: 'return',
+                        quantity: item.quantity,
+                        quantityBefore,
+                        quantityAfter: currentProduct.quantityInStock,
+                        notes: `إلغاء الطلب ${order.orderCode}`,
+                        orderCode: order.orderCode,
+                        userId: appUser.id,
+                        userName: appUser.fullName,
+                    };
                 });
             }
 
@@ -188,28 +182,28 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                         - سيتم تغيير حالة الطلب إلى <span className="font-bold text-destructive">"ملغي"</span>.
                         <br />
                         - سيتم إرجاع كافة الأصناف للمخزون تلقائياً.
-                        
-                        {order.paid > 0 && (
-                            <div className="mt-4 p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-900">
-                                <p className="font-bold mb-2">تنبيه لرد المبلغ (إجمالي المدفوع: {order.paid.toLocaleString()} ج.م):</p>
-                                <Label className="text-xs mb-2 block">اختر الوردية المفتوحة لخصم مبلغ الاسترداد منها:</Label>
-                                <Select value={selectedShiftId} onValueChange={setSelectedShiftId}>
-                                    <SelectTrigger className="h-10 bg-white">
-                                        <SelectValue placeholder="-- اختر وردية مفتوحة --" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {openShifts.map(s => (
-                                            <SelectItem key={s.id} value={s.id}>
-                                                وردية {s.cashier.name} ({s.shiftCode || s.id.slice(-4)})
-                                            </SelectItem>
-                                        ))}
-                                        {openShifts.length === 0 && <SelectItem value="none" disabled>لا توجد ورديات مفتوحة حالياً!</SelectItem>}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        )}
                     </AlertDialogDescription>
                 </AlertDialogHeader>
+
+                {order.paid > 0 && (
+                    <div className="mt-2 p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-900">
+                        <div className="font-bold mb-2">تنبيه لرد المبلغ (إجمالي المدفوع: {order.paid.toLocaleString()} ج.م):</div>
+                        <Label className="text-xs mb-2 block">اختر الوردية المفتوحة لخصم مبلغ الاسترداد منها:</Label>
+                        <Select value={selectedShiftId} onValueChange={setSelectedShiftId}>
+                            <SelectTrigger className="h-10 bg-white">
+                                <SelectValue placeholder="-- اختر وردية مفتوحة --" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {openShifts.map(s => (
+                                    <SelectItem key={s.id} value={s.id}>
+                                        وردية {s.cashier.name} ({s.shiftCode || s.id.slice(-4)})
+                                    </SelectItem>
+                                ))}
+                                {openShifts.length === 0 && <SelectItem value="none" disabled>لا توجد ورديات مفتوحة حالياً!</SelectItem>}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
                 <AlertDialogFooter className="flex-row-reverse gap-2">
                     <AlertDialogCancel disabled={isLoading}>تراجع</AlertDialogCancel>
                     <AlertDialogAction 

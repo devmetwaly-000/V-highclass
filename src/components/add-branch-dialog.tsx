@@ -16,8 +16,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { Branch } from "@/lib/definitions";
 import { useDatabase } from "@/firebase";
-import { ref, set, push, update } from 'firebase/database';
+import { ref, set, push, runTransaction, update } from 'firebase/database';
 import { useToast } from "@/hooks/use-toast";
+import { initializeBranchOrderCounter } from '@/lib/order-counter';
 
 type AddBranchDialogProps = {
     branch?: Branch;
@@ -87,6 +88,7 @@ export function AddBranchDialog({ branch, open, onOpenChange }: AddBranchDialogP
               const newBranchId = newBranchRef.key;
               if (!newBranchId) throw new Error("Failed to create new branch ID.");
               await set(newBranchRef, { ...branchData, id: newBranchId, createdAt: new Date().toISOString() });
+              await initializeBranchOrderCounter(db, newBranchId);
               toast({ title: "تم إضافة الفرع بنجاح" });
           }
           

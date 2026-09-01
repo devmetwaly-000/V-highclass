@@ -48,6 +48,7 @@ import { useUser, useDatabase } from '@/firebase';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useToast } from '@/hooks/use-toast';
 import { ref, set, push, runTransaction, update, get } from 'firebase/database';
+import { getNextOrderCode } from '@/lib/order-counter';
 import { PrintCashierReceiptDialog as PrintReceipt } from './print-cashier-receipt-dialog';
 import { DatePickerDialog } from './ui/date-picker-dialog';
 import { SelectProductDialog } from './select-product-dialog';
@@ -343,17 +344,7 @@ function NewOrderDialogInner({ order, initialProductId, closeDialog }: { order?:
         let finalOrderCode = order?.orderCode || "";
 
         if (!isEditMode) {
-            const counterRef = ref(dbRTDB, 'counters/orders');
-            const res = await runTransaction(counterRef, c => { 
-                if (!c) return { value: 70000001 }; 
-                c.value++; 
-                return c; 
-            });
-
-            if (!res.committed || !res.snapshot.exists()) {
-                throw new Error("فشل النظام في توليد رقم فاتورة جديد.");
-            }
-            finalOrderCode = res.snapshot.val().value.toString();
+            finalOrderCode = await getNextOrderCode(dbRTDB, branchId);
         }
 
         const datePath = isEditMode ? (order!.datePath || format(new Date(order!.orderDate), 'yyyy-MM-dd')) : format(new Date(), 'yyyy-MM-dd');

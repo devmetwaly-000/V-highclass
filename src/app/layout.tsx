@@ -8,6 +8,7 @@ import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { SettingsProvider } from '@/hooks/use-settings';
 import { SyncProvider } from '@/providers/sync-provider';
 import { RtdbDataProvider } from '@/providers/rtdb-data-provider';
+import { ProductsDataProvider } from '@/providers/products-data-provider';
 
 export const metadata: Metadata = {
   title: 'High-Class',
@@ -45,9 +46,11 @@ export default function RootLayout({
             <FirebaseClientProvider>
               <SettingsProvider>
                 <RtdbDataProvider>
-                  <SyncProvider>
-                    {children}
-                  </SyncProvider>
+                  <ProductsDataProvider>
+                    <SyncProvider>
+                      {children}
+                    </SyncProvider>
+                  </ProductsDataProvider>
                 </RtdbDataProvider>
               </SettingsProvider>
             </FirebaseClientProvider>

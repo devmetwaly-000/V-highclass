@@ -42,6 +42,7 @@ import { AddProductDialog } from '@/components/add-product-dialog';
 import { DeleteProductDialog } from '@/components/delete-product-dialog';
 import type { Order, Product, Branch, StockMovement } from '@/lib/definitions';
 import { useRtdbList } from '@/hooks/use-rtdb';
+import { useProductStockMovements } from '@/hooks/use-product-stock-movements';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout, AuthGuard } from '@/components/app-layout';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
@@ -89,16 +90,16 @@ function ProductDetailsPageContent({
   const product = useMemo(() => {
     return products.find((p) => p.id === id);
   }, [products, id]);
+
+  const { stockMovements, isLoading: isLoadingMovements } = useProductStockMovements(
+    product?.id,
+    product?.stockMovements
+  );
   
   const productOrders: Order[] = useMemo(() => {
       if (!product) return [];
       return orders.filter(o => o.items.some(item => item.productId === product.id));
   }, [orders, product]);
-
-  const stockMovements = useMemo(() => {
-    if (!product?.stockMovements) return [];
-    return Object.values(product.stockMovements).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [product]);
 
   const branchName = useMemo(() => {
       if (!product) return 'غير معروف';
@@ -315,7 +316,14 @@ function ProductDetailsPageContent({
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {stockMovements.map((move) => (
+                            {isLoadingMovements && (
+                                <TableRow>
+                                    <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                                        جاري تحميل حركات المخزون...
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                            {!isLoadingMovements && stockMovements.map((move) => (
                                 <TableRow key={move.id}>
                                     <TableCell className="font-mono text-xs text-right">{formatMovementDate(move.date)}</TableCell>
                                     <TableCell className="text-right">
@@ -339,7 +347,7 @@ function ProductDetailsPageContent({
                                     <TableCell className="text-right">{move.userName}</TableCell>
                                 </TableRow>
                             ))}
-                            {stockMovements.length === 0 && (
+                            {!isLoadingMovements && stockMovements.length === 0 && (
                                 <TableRow>
                                     <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">لا توجد حركات مخزون مسجلة.</TableCell>
                                 </TableRow>

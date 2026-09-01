@@ -35,7 +35,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order, Customer, Product, Counter, Expense, Branch } from '@/lib/definitions';
+import type { Order, Customer, Counter, Expense, Branch } from '@/lib/definitions';
+import { db } from '@/lib/db';
 import { Skeleton } from '@/components/ui/skeleton';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useUser } from '@/firebase';
@@ -77,7 +78,7 @@ function DashboardPageContent() {
   // تحسين الأداء عبر جلب آخر 90 يوماً فقط للوحة التحكم الافتراضية
   const { data: allOrders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries', { limit: 90 });
   const { data: customers, isLoading: isLoadingCustomers } = useRtdbList<Customer>('customers');
-  const { data: products, isLoading: isLoadingProducts } = useRtdbList<Product>('products');
+  const [totalProducts, setTotalProducts] = useState(0);
   const { data: allExpenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
   const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
   const { data: counters, isLoading: isLoadingCounters } = useRtdbList<Counter>('counters');
@@ -86,12 +87,16 @@ function DashboardPageContent() {
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(['dashboard:view'] as const);
 
   useEffect(() => {
+    db.persistentCache.where('path').equals('products').count().then(setTotalProducts).catch(() => setTotalProducts(0));
+  }, []);
+
+  useEffect(() => {
     if (appUser && appUser.branchId !== 'all') {
       setBranchFilter(appUser.branchId || 'all');
     }
   }, [appUser]);
 
-  const isLoading = isLoadingOrders || isLoadingCustomers || isLoadingProducts || isLoadingExpenses || isLoadingBranches || isLoadingCounters || isLoadingPermissions;
+  const isLoading = isLoadingOrders || isLoadingCustomers || isLoadingExpenses || isLoadingBranches || isLoadingCounters || isLoadingPermissions;
 
   const dashboardData = useMemo(() => {
     const start = fromDate ? startOfDay(fromDate) : null;
@@ -123,14 +128,14 @@ function DashboardPageContent() {
       totalRevenue,
       totalOrders: filteredOrders.length,
       totalCustomers: customers.length,
-      totalProducts: products.length,
+      totalProducts,
       totalExpenses,
       totalDiscounts,
       netProfit,
       recentOrders,
       globalTotalExpenses,
     }
-  }, [allOrders, allExpenses, customers, products, branchFilter, fromDate, toDate]);
+  }, [allOrders, allExpenses, customers, totalProducts, branchFilter, fromDate, toDate]);
   
   if (!isLoading && !permissions.canDashboardView) {
     return (

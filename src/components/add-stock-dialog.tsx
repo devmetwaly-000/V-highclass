@@ -14,9 +14,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeftRight } from "lucide-react";
-import type { Product, StockMovement } from "@/lib/definitions";
+import type { Product } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
-import { ref, runTransaction, push } from "firebase/database";
+import { runProductStockTransaction } from "@/lib/stock-movements";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "./ui/textarea";
 
@@ -52,41 +52,27 @@ export function AddStockDialog({ product }: AddStockDialogProps) {
     }
 
     setIsLoading(true);
-    const productRef = ref(db, `products/${product.id}`);
 
     try {
-      await runTransaction(productRef, (currentData) => {
-        if (currentData) {
-          const nowISO = new Date().toISOString();
-          const movementRef = push(ref(db, `products/${product.id}/stockMovements`));
-          
-          const quantityBefore = currentData.quantityInStock || 0;
-          const quantityAfter = quantityBefore + adjustment;
+      await runProductStockTransaction(db, product.id, (currentData) => {
+        const nowISO = new Date().toISOString();
+        const quantityBefore = currentData.quantityInStock || 0;
+        const quantityAfter = quantityBefore + adjustment;
 
-          const newMovement: StockMovement = {
-              id: movementRef.key!,
-              date: nowISO,
-              type: 'edit', 
-              quantity: adjustment,
-              quantityBefore: quantityBefore,
-              quantityAfter: quantityAfter,
-              notes: notes || `تعديل يدوي للرصيد`,
-              userId: appUser.id,
-              userName: appUser.fullName,
-          };
-          
-          // تحديث الرصيد الحالي
-          currentData.quantityInStock = quantityAfter;
-          // تحديث الكمية الأولية (الإجمالي) لضمان ثبات حسابات الجرد
-          currentData.initialStock = (currentData.initialStock || 0) + adjustment;
-          currentData.updatedAt = nowISO;
-          
-          if (!currentData.stockMovements) {
-            currentData.stockMovements = {};
-          }
-          currentData.stockMovements[newMovement.id] = newMovement;
-        }
-        return currentData;
+        currentData.quantityInStock = quantityAfter;
+        currentData.initialStock = (currentData.initialStock || 0) + adjustment;
+        currentData.updatedAt = nowISO;
+
+        return {
+          date: nowISO,
+          type: 'edit',
+          quantity: adjustment,
+          quantityBefore,
+          quantityAfter,
+          notes: notes || 'تعديل يدوي للرصيد',
+          userId: appUser.id,
+          userName: appUser.fullName,
+        };
       });
 
       toast({

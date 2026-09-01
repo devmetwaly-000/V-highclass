@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getDatabase, ref, runTransaction, push, set, update, get } from 'firebase/database';
 import { useDatabase, useUser } from '@/firebase';
 import type { Order, Product, StockMovement, Shift, User } from '@/lib/definitions';
+import { getNextOrderCode } from '@/lib/order-counter';
 import { format } from 'date-fns';
 
 interface SyncContextType {
@@ -61,15 +62,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             } else if (item.type === 'create-order') {
                 const orderData: Partial<Order> = item.payload;
 
-                const counterRef = ref(dbRTDB, 'counters/orders');
-                const transactionResult = await runTransaction(counterRef, (currentData) => {
-                    if (currentData === null) return { name: 'orders', value: 70000001 };
-                    currentData.value++;
-                    return currentData;
-                });
-                if (!transactionResult.committed) throw new Error("Sync Error: Failed to generate order code.");
-                
-                const orderCode = transactionResult.snapshot.val().value.toString();
+                if (!orderData.branchId) {
+                    throw new Error('Sync Error: Order is missing branchId.');
+                }
+
+                const orderCode = await getNextOrderCode(dbRTDB, orderData.branchId);
                 orderData.orderCode = orderCode;
                 orderData.notes = (orderData.notes || '') + `\n[SYNC] Synced from offline by ${appUser.fullName}.`;
                 orderData.createdAt = new Date().toISOString();

@@ -409,11 +409,11 @@ function DatabaseManagementPageContent() {
             description="حذف جميع الأصناف، الباركودات، وسجل حركة المخزون."
             icon={Package}
             category="products"
-            paths={['products', 'counters/products']}
+            paths={['products', 'counters/products', 'stockMovements']}
           />
           <DeletionCard 
             title="الطلبات والمالية" 
-            description="حذف جميع الطلبات، الورديات، المصروفات، والمشتريات."
+            description="حذف جميع الطلبات، الورديات، المصروفات، والمشتريات. يشمل عدادات الطلبات لكل فرع."
             icon={ShoppingCart}
             category="orders"
             paths={['daily-entries', 'shifts', 'expenses', 'discountRequests', 'saleReturns', 'purchaseOrders', 'purchaseReturns', 'counters/orders']}

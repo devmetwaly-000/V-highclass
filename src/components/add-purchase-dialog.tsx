@@ -16,10 +16,11 @@ import { Label } from "@/components/ui/label";
 import { DatePickerDialog } from './ui/date-picker-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Supplier, Product, PurchaseOrder, StockMovement, Counter } from '@/lib/definitions';
+import type { Supplier, Product, PurchaseOrder, Counter } from '@/lib/definitions';
 import { useDatabase, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { ref, set, push, get, runTransaction, update } from 'firebase/database';
+import { runProductStockTransaction } from '@/lib/stock-movements';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { ProductCombobox } from './product-combobox';
 import { AddProductDialog } from './add-product-dialog';
@@ -186,31 +187,21 @@ export function AddPurchaseDialog({ open, onOpenChange, purchaseOrder }: AddPurc
         // Process stock updates
         for (const item of items) {
             if (!item.productId) continue;
-            const productRef = ref(db, `products/${item.productId}`);
-            
-            await runTransaction(productRef, (currentProduct: Product) => {
-                if(currentProduct) {
-                    const movementRef = push(ref(db, `products/${item.productId}/stockMovements`));
-                    const quantityBefore = currentProduct.quantityInStock || 0;
-                    currentProduct.quantityInStock = quantityBefore + item.quantity;
-                    
-                    const newMovement: StockMovement = {
-                        id: movementRef.key!,
-                        date: new Date().toISOString(),
-                        type: 'addition',
-                        quantity: item.quantity,
-                        quantityBefore: quantityBefore,
-                        quantityAfter: currentProduct.quantityInStock,
-                        notes: `فاتورة شراء ${purchaseOrderCode}`,
-                        userId: appUser.id,
-                        userName: appUser.fullName,
-                    };
-                    if (!currentProduct.stockMovements) {
-                        currentProduct.stockMovements = {};
-                    }
-                    currentProduct.stockMovements[newMovement.id] = newMovement;
-                }
-                return currentProduct;
+
+            await runProductStockTransaction(db, item.productId, (currentProduct) => {
+                const quantityBefore = currentProduct.quantityInStock || 0;
+                currentProduct.quantityInStock = quantityBefore + item.quantity;
+
+                return {
+                    date: new Date().toISOString(),
+                    type: 'addition',
+                    quantity: item.quantity,
+                    quantityBefore,
+                    quantityAfter: currentProduct.quantityInStock,
+                    notes: `فاتورة شراء ${purchaseOrderCode}`,
+                    userId: appUser.id,
+                    userName: appUser.fullName,
+                };
             });
         }
         

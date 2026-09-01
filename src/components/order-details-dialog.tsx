@@ -66,6 +66,7 @@ import { AddOrderNoteDialog } from './add-order-note-dialog';
 import { PrintCashierReceiptDialog } from './print-cashier-receipt-dialog';
 import { PrintTailorReceiptDialog } from './print-tailor-receipt-dialog';
 import { NewOrderDialog } from './new-order-dialog';
+import { getNextOrderCode, DEFAULT_ORDER_COUNTER_START } from '@/lib/order-counter';
 import { cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
 import { AddPaymentDialog } from './add-payment-dialog';
@@ -74,7 +75,7 @@ import { ExchangeItemDialog } from './exchange-item-dialog';
 import { EditPaymentsDialog } from './edit-payments-dialog';
 import { DeletePaymentDialog } from './delete-payment-dialog';
 import { useDatabase, useUser } from '@/firebase';
-import { ref, update, runTransaction, get } from 'firebase/database';
+import { ref, update } from 'firebase/database';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -197,16 +198,17 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
     }, [order]);
 
     const availableGaps = useMemo(() => {
-        if (!allOrders || allOrders.length === 0) return [];
+        if (!allOrders || !order?.branchId) return [];
 
-        const codes = allOrders
+        const branchOrders = allOrders.filter((o) => o.branchId === order.branchId);
+        const codes = branchOrders
             .map(o => parseInt(o.orderCode))
             .filter(code => !isNaN(code))
             .sort((a, b) => a - b);
 
         if (codes.length === 0) return [];
 
-        const minCode = 70000001;
+        const minCode = DEFAULT_ORDER_COUNTER_START;
         const maxCode = codes[codes.length - 1];
         const gaps: string[] = [];
 
@@ -217,7 +219,7 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
         }
 
         return gaps;
-    }, [allOrders]);
+    }, [allOrders, order?.branchId]);
 
     const handleUpdateStatus = async (newStatus: string, extraData: any = {}) => {
         if (!order || !db) return;
@@ -269,19 +271,11 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
     };
 
     const handleTakeNextSequential = async () => {
-        if (!order || !db || !appUser) return;
+        if (!order || !db || !appUser || !order.branchId) return;
         setIsFixingCode(true);
         try {
-            const counterRef = ref(db, 'counters/orders');
-            const res = await runTransaction(counterRef, c => {
-                if (!c) return { value: 70000001 };
-                c.value++;
-                return c;
-            });
-
-            if (!res.committed) throw new Error("فشل في استخراج رقم تسلسلي جديد.");
-
-            const newCode = res.snapshot.val().value.toString();
+            const branchOrders = allOrders.filter((o) => o.branchId === order.branchId);
+            const newCode = await getNextOrderCode(db, order.branchId, branchOrders);
             const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
             const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
             
@@ -316,8 +310,10 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
   const transactionBaseGross = (order.total || 0) + (order.discountAmount || 0);
   const isMissingCode = !order.orderCode;
 
+  const summaryRowClass = "flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between";
+
   return (
-    <div className="max-h-[80vh] overflow-y-auto">
+    <div className="min-w-0" dir="rtl">
         <Dialog open={showFixDialog} onOpenChange={setShowFixDialog}>
             <DialogContent className="sm:max-w-md text-right" dir="rtl">
                 <DialogHeader>
@@ -368,8 +364,8 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
             </DialogContent>
         </Dialog>
 
-        <div className="grid md:grid-cols-3 gap-8 items-start px-6 pb-6 pt-2" dir="rtl">
-            <div className="md:col-span-2 flex flex-col gap-8">
+        <div className="flex flex-col-reverse gap-4 sm:gap-6 xl:grid xl:grid-cols-3 xl:items-start px-3 sm:px-6 pb-4 pt-2">
+            <div className="xl:col-span-2 flex flex-col gap-4 sm:gap-6 min-w-0">
                 {isMissingCode && (
                     <Alert variant="destructive" className="bg-destructive/5 border-destructive/20">
                         <AlertTriangle className="h-5 w-5" />
@@ -391,13 +387,69 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                 )}
 
                 <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Package className="h-5 w-5 text-primary"/>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                            <Package className="h-5 w-5 text-primary shrink-0"/>
                             أصناف الطلب
+                            <Badge variant="secondary" className="mr-auto text-xs">{order.items.length}</Badge>
                         </CardTitle>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="p-3 sm:p-6 pt-0">
+                        {/* Mobile: card layout */}
+                        <div className="md:hidden space-y-3">
+                            {order.items.map((item, index) => {
+                                const basePrice = item.priceAtTimeOfOrder + (item.itemDiscount || 0);
+                                const lineTotal = item.priceAtTimeOfOrder * item.quantity;
+                                return (
+                                    <div key={index} className="rounded-lg border bg-card p-3 space-y-2">
+                                        <p className="font-medium text-sm leading-snug">{item.productName}</p>
+                                        <div className="grid grid-cols-2 gap-2 text-xs">
+                                            <div className="rounded-md bg-muted/50 px-2 py-1.5 text-center">
+                                                <p className="text-muted-foreground">الكمية</p>
+                                                <p className="font-bold">{item.quantity}</p>
+                                            </div>
+                                            <div className="rounded-md bg-muted/50 px-2 py-1.5 text-center">
+                                                <p className="text-muted-foreground">الصافي</p>
+                                                <p className="font-mono font-bold">{lineTotal.toLocaleString()} ج.م</p>
+                                            </div>
+                                            <div className="rounded-md bg-muted/30 px-2 py-1.5 text-center">
+                                                <p className="text-muted-foreground">السعر</p>
+                                                <p className="font-mono">{basePrice.toLocaleString()}</p>
+                                            </div>
+                                            <div className="rounded-md bg-muted/30 px-2 py-1.5 text-center">
+                                                <p className="text-muted-foreground">الخصم</p>
+                                                <p className="font-mono text-green-600">{(item.itemDiscount || 0).toLocaleString()}</p>
+                                            </div>
+                                        </div>
+                                        {(item.tailorNotes || item.measurements) && (
+                                            <div className="pt-2 border-t space-y-2 text-sm">
+                                                {item.measurements && (
+                                                    <div className="flex items-start gap-2">
+                                                        <Ruler className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                                                        <div className="min-w-0">
+                                                            <p className="text-xs font-semibold text-muted-foreground">القياسات</p>
+                                                            <p className="text-sm break-words">{item.measurements}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {item.tailorNotes && (
+                                                    <div className="flex items-start gap-2">
+                                                        <Scissors className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                                                        <div className="min-w-0">
+                                                            <p className="text-xs font-semibold text-muted-foreground">ملاحظات الخياط</p>
+                                                            <p className="text-sm break-words">{item.tailorNotes}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Desktop: table layout */}
+                        <div className="hidden md:block overflow-x-auto -mx-1">
                          <Table>
                             <TableHeader>
                                 <TableRow>
@@ -449,18 +501,41 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                                 })}
                             </TableBody>
                         </Table>
+                        </div>
                     </CardContent>
                 </Card>
 
                 {paymentList.length > 0 && (
                     <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <History className="h-5 w-5 text-primary"/>
-                                سجل المقبوضات (Payments)
+                        <CardHeader className="pb-3">
+                            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                                <History className="h-5 w-5 text-primary shrink-0"/>
+                                سجل المقبوضات
+                                <Badge variant="secondary" className="mr-auto text-xs">{paymentList.length}</Badge>
                             </CardTitle>
                         </CardHeader>
-                        <CardContent className="p-0 sm:p-6">
+                        <CardContent className="p-3 sm:p-6 pt-0">
+                            {/* Mobile: payment cards */}
+                            <div className="md:hidden space-y-2">
+                                {paymentList.map((p) => (
+                                    <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-[10px] font-mono text-muted-foreground">{formatDate(p.date)}</p>
+                                            <p className="text-xs mt-0.5">{p.userName}</p>
+                                            <Badge variant="outline" className="text-[10px] mt-1">{p.method}</Badge>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className="font-bold font-mono text-green-600 text-sm">+{p.amount.toLocaleString()}</span>
+                                            {permissions.canOrdersDeletePayment && p.id !== "legacy-initial" && (
+                                                <DeletePaymentDialog order={order} payment={p} />
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Desktop: payments table */}
+                            <div className="hidden md:block overflow-x-auto">
                             <Table>
                                 <TableHeader>
                                     <TableRow>
@@ -487,6 +562,7 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                                     ))}
                                 </TableBody>
                             </Table>
+                            </div>
                         </CardContent>
                     </Card>
                 )}
@@ -505,70 +581,70 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                     </Card>
                 )}
             </div>
-            <div className="md:col-span-1 flex flex-col gap-8">
+            <div className="xl:col-span-1 flex flex-col gap-4 sm:gap-6 min-w-0">
                 <Card>
-                    <CardHeader>
-                        <CardTitle>ملخص الطلب</CardTitle>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-base sm:text-lg">ملخص الطلب</CardTitle>
                     </CardHeader>
-                    <CardContent className="grid gap-4 text-sm">
-                        <div className="flex justify-between items-center">
+                    <CardContent className="grid gap-3 sm:gap-4 text-sm">
+                        <div className={summaryRowClass}>
                             <span className="text-muted-foreground">الحالة</span>
-                            {getStatusBadge(order)}
+                            <div className="sm:text-left">{getStatusBadge(order)}</div>
                         </div>
                         <Separator/>
-                         <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-4 w-4"/> تاريخ الطلب</span>
-                            <span className="text-[10px] font-mono font-bold">{formatDate(order.orderDate)}</span>
+                         <div className={summaryRowClass}>
+                            <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><Calendar className="h-4 w-4"/> تاريخ الطلب</span>
+                            <span className="text-[10px] sm:text-xs font-mono font-bold break-all sm:text-left">{formatDate(order.orderDate)}</span>
                         </div>
                          {order.deliveryDate && (
-                             <div className="flex justify-between items-center">
-                                <span className="text-muted-foreground flex items-center gap-1.5"><Calendar className="h-4 w-4"/> تاريخ التسليم</span>
-                                <span className="text-[10px] font-mono font-bold">{formatDate(order.deliveryDate)}</span>
+                             <div className={summaryRowClass}>
+                                <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><Calendar className="h-4 w-4"/> تاريخ التسليم</span>
+                                <span className="text-[10px] sm:text-xs font-mono font-bold break-all sm:text-left">{formatDate(order.deliveryDate)}</span>
                             </div>
                          )}
                         <Separator/>
-                         <div className="flex justify-between items-start">
-                            <span className="text-muted-foreground flex items-center gap-1.5"><UserIcon className="h-4 w-4"/> العميل</span>
-                            <div className="flex flex-col items-end">
-                                <span className="font-bold">{order.customerName}</span>
-                                {customerPhone && <span dir="ltr" className="text-xs font-mono">{customerPhone}</span>}
+                         <div className={summaryRowClass}>
+                            <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><UserIcon className="h-4 w-4"/> العميل</span>
+                            <div className="sm:text-left min-w-0">
+                                <p className="font-bold truncate">{order.customerName}</p>
+                                {customerPhone && <p dir="ltr" className="text-xs font-mono">{customerPhone}</p>}
                             </div>
                         </div>
-                         <div className="flex justify-between">
-                            <span className="text-muted-foreground flex items-center gap-1.5"><BookUser className="h-4 w-4"/> البائع</span>
-                            <span>{order.sellerName}</span>
+                         <div className={summaryRowClass}>
+                            <span className="text-muted-foreground flex items-center gap-1.5 shrink-0"><BookUser className="h-4 w-4"/> البائع</span>
+                            <span className="sm:text-left truncate">{order.sellerName}</span>
                         </div>
                     </CardContent>
                 </Card>
 
                  <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                           <FileText className="h-5 w-5 text-primary"/>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                           <FileText className="h-5 w-5 text-primary shrink-0"/>
                             الملخص المالي
                         </CardTitle>
                     </CardHeader>
-                    <CardContent className="grid gap-3 text-sm">
-                        <div className="flex justify-between font-medium">
+                    <CardContent className="grid gap-2 sm:gap-3 text-sm">
+                        <div className={cn(summaryRowClass, "font-medium")}>
                             <span>إجمالي سعر المعاملة</span>
-                            <span className="font-mono">{transactionBaseGross.toLocaleString()} ج.م</span>
+                            <span className="font-mono sm:text-left">{transactionBaseGross.toLocaleString()} ج.م</span>
                         </div>
-                        <div className="flex justify-between font-medium text-green-600">
+                        <div className={cn(summaryRowClass, "font-medium text-green-600")}>
                             <span>الخصم الممنوح</span>
-                            <span className="font-mono">-{(order.discountAmount || 0).toLocaleString()} ج.م</span>
+                            <span className="font-mono sm:text-left">-{(order.discountAmount || 0).toLocaleString()} ج.م</span>
                         </div>
                          <Separator/>
-                         <div className="flex justify-between font-bold text-base text-primary">
+                         <div className={cn(summaryRowClass, "font-bold text-base text-primary")}>
                             <span>الصافي النهائي</span>
-                            <span className="font-mono">{(order.total || 0).toLocaleString()} ج.م</span>
+                            <span className="font-mono sm:text-left">{(order.total || 0).toLocaleString()} ج.م</span>
                         </div>
-                         <div className="flex justify-between font-medium">
+                         <div className={summaryRowClass}>
                             <span>المسدد</span>
-                            <span className="font-mono">{(order.paid || 0).toLocaleString()} ج.م</span>
+                            <span className="font-mono sm:text-left">{(order.paid || 0).toLocaleString()} ج.م</span>
                         </div>
-                         <div className={cn("flex justify-between font-bold text-lg p-2 rounded-md", order.remainingAmount > 0 ? 'bg-destructive/10 text-destructive' : 'bg-green-500/10 text-green-600')}>
+                         <div className={cn(summaryRowClass, "font-bold text-base sm:text-lg p-2 sm:p-3 rounded-md", order.remainingAmount > 0 ? 'bg-destructive/10 text-destructive' : 'bg-green-500/10 text-green-600')}>
                             <span>المتبقي</span>
-                            <span className="font-mono">{(order.remainingAmount || 0).toLocaleString()} ج.م</span>
+                            <span className="font-mono sm:text-left">{(order.remainingAmount || 0).toLocaleString()} ج.م</span>
                         </div>
                         {order.status !== 'Cancelled' && (
                             <div className="pt-2">
@@ -579,15 +655,15 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                 </Card>
 
                  <Card>
-                    <CardHeader>
-                         <CardTitle className="flex items-center gap-2">
-                           <Settings className="h-5 w-5 text-primary"/>
+                    <CardHeader className="pb-3">
+                         <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+                           <Settings className="h-5 w-5 text-primary shrink-0"/>
                             الإجراءات
                         </CardTitle>
                     </CardHeader>
-                    <CardContent className="flex flex-col gap-2">
+                    <CardContent className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-2">
                         {order.status !== 'Cancelled' && (
-                            <div className="space-y-2 mb-2 p-3 bg-muted/30 rounded-lg border border-dashed text-right">
+                            <div className="space-y-2 mb-1 p-3 bg-muted/30 rounded-lg border border-dashed text-right col-span-full">
                                 <p className="text-[10px] text-muted-foreground mb-2 font-bold">تغيير الحالة:</p>
                                 {order.status === 'Pending' && (
                                     <Button variant="outline" className="w-full justify-start gap-2 text-primary" onClick={() => handleUpdateStatus('Ready for Pickup')} disabled={isUpdatingStatus}>
@@ -612,27 +688,27 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                             </div>
                         )}
 
-                        <Separator className="my-1" />
+                        <Separator className="my-1 col-span-full" />
 
                         {order.remainingAmount > 0 && permissions.canOrdersAddPayment && order.status !== 'Cancelled' && (
-                            <AddPaymentDialog order={order} trigger={<Button variant="default" className="w-full justify-start gap-2 bg-blue-600"><DollarSign className="h-4 w-4" /> تحصيل دفعة</Button>} />
+                            <AddPaymentDialog order={order} trigger={<Button variant="default" className="w-full justify-start gap-2 bg-blue-600 col-span-full sm:col-span-2 xl:col-span-1"><DollarSign className="h-4 w-4 shrink-0" /> تحصيل دفعة</Button>} />
                         )}
                         
                         {order.status !== 'Cancelled' && permissions.canOrdersAddNote && (
-                            <AddOrderNoteDialog order={order} trigger={<Button variant="outline" className="w-full justify-start gap-2"><MessageSquarePlus className="h-4 w-4" /> إضافة ملاحظة</Button>} />
+                            <AddOrderNoteDialog order={order} trigger={<Button variant="outline" className="w-full justify-start gap-2"><MessageSquarePlus className="h-4 w-4 shrink-0" /> إضافة ملاحظة</Button>} />
                         )}
 
                         {permissions.canOrdersPrintReceipt && (
-                            <PrintCashierReceiptDialog order={order} trigger={<Button className="w-full justify-start gap-2" variant="outline"><Printer className="h-4 w-4" /> طباعة الإيصال</Button>} />
+                            <PrintCashierReceiptDialog order={order} trigger={<Button className="w-full justify-start gap-2" variant="outline"><Printer className="h-4 w-4 shrink-0" /> طباعة الإيصال</Button>} />
                         )}
                         {order.status !== 'Cancelled' && permissions.canOrdersExchange && (
-                            <ExchangeItemDialog order={order} trigger={<Button variant="outline" className="w-full justify-start gap-2"><ArrowLeftRight className="h-4 w-4" /> تبديل صنف</Button>}/>
+                            <ExchangeItemDialog order={order} trigger={<Button variant="outline" className="w-full justify-start gap-2"><ArrowLeftRight className="h-4 w-4 shrink-0" /> تبديل صنف</Button>}/>
                         )}
                         {order.status !== 'Cancelled' && permissions.canOrdersEdit && (
-                            <NewOrderDialog order={order} trigger={<Button variant="outline" className="w-full justify-start gap-2"><Pencil className="h-4 w-4" /> تعديل الطلب</Button>}/>
+                            <NewOrderDialog order={order} trigger={<Button variant="outline" className="w-full justify-start gap-2"><Pencil className="h-4 w-4 shrink-0" /> تعديل الطلب</Button>}/>
                         )}
                         {order.status !== 'Cancelled' && order.status !== 'Returned' && permissions.canOrdersCancel && (
-                            <CancelOrderDialog order={order} trigger={<Button variant="ghost" className="w-full justify-start gap-2 text-destructive"><Trash2 className="h-4 w-4" /> إلغاء الطلب</Button>} />
+                            <CancelOrderDialog order={order} trigger={<Button variant="ghost" className="w-full justify-start gap-2 text-destructive col-span-full sm:col-span-2 xl:col-span-1"><Trash2 className="h-4 w-4 shrink-0" /> إلغاء الطلب</Button>} />
                         )}
                     </CardContent>
                  </Card>
@@ -662,14 +738,41 @@ export function OrderDetailsDialog({ orderId, order, children }: OrderDetailsDia
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="max-w-4xl p-0">
-        <DialogHeader className="p-6 pb-0">
-          <DialogTitle>تفاصيل الطلب - {order?.orderCode || '...'}</DialogTitle>
+      <DialogContent
+        className={cn(
+          "flex flex-col gap-0 p-0 overflow-hidden",
+          "w-[100vw] max-w-[100vw] h-[100dvh] max-h-[100dvh] rounded-none border-0",
+          "sm:w-[min(96vw,56rem)] sm:max-w-5xl sm:h-[min(92dvh,900px)] sm:max-h-[92dvh] sm:rounded-lg sm:border",
+          "lg:max-w-6xl"
+        )}
+        dir="rtl"
+      >
+        <DialogHeader className="shrink-0 px-4 py-3 sm:px-6 sm:py-4 border-b text-right space-y-2">
+          <div className="flex flex-wrap items-center gap-2 pr-8">
+            <DialogTitle className="text-base sm:text-lg leading-snug">
+              تفاصيل الطلب
+              {order?.orderCode && (
+                <span className="font-mono text-primary mr-1">#{order.orderCode}</span>
+              )}
+            </DialogTitle>
+            {order && getStatusBadge(order)}
+          </div>
+          {order && (
+            <p className="text-xs sm:text-sm text-muted-foreground truncate">
+              {order.customerName} · {order.branchName}
+            </p>
+          )}
           <DialogDescription className="sr-only">عرض تفاصيل الطلب.</DialogDescription>
         </DialogHeader>
-        {open && <OrderDetailsContent order={order} orderId={orderId} />}
-        <DialogFooter className="p-6 pt-4 border-t">
-            <DialogClose asChild><Button variant="outline">إغلاق</Button></DialogClose>
+
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+          {open && <OrderDetailsContent order={order} orderId={orderId} />}
+        </div>
+
+        <DialogFooter className="shrink-0 p-3 sm:p-4 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <DialogClose asChild>
+              <Button variant="outline" className="w-full sm:w-auto min-h-10">إغلاق</Button>
+            </DialogClose>
         </DialogFooter>
       </DialogContent>
     </Dialog>

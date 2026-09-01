@@ -18,9 +18,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CheckCircle2, AlertTriangle, UserCheck, Package, Undo2, ArrowLeftRight, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import type { Order, Product, StockMovement, User as AppUser, OrderItem } from "@/lib/definitions";
+import type { Order, Product, User as AppUser, OrderItem } from "@/lib/definitions";
 import { useDatabase, useUser } from "@/firebase";
-import { ref, update, push, runTransaction } from "firebase/database";
+import { ref, update } from "firebase/database";
+import { runProductStockTransaction } from "@/lib/stock-movements";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -123,31 +124,23 @@ export function ReceiveReturnDialog({ order, trigger }: ReceiveReturnDialogProps
       for (const item of order.items) {
           const qtyToReturnNow = returningQuantities[item.productId] || 0;
           if (qtyToReturnNow > 0) {
-              const productRef = ref(db, `products/${item.productId}`);
-              await runTransaction(productRef, (currentProduct: Product) => {
-                  if (currentProduct) {
-                      const quantityBefore = currentProduct.quantityInStock || 0;
-                      currentProduct.quantityInStock = quantityBefore + qtyToReturnNow;
-                      currentProduct.quantityRented = Math.max(0, (currentProduct.quantityRented || 0) - qtyToReturnNow);
+              await runProductStockTransaction(db, item.productId, (currentProduct) => {
+                  const quantityBefore = currentProduct.quantityInStock || 0;
+                  currentProduct.quantityInStock = quantityBefore + qtyToReturnNow;
+                  currentProduct.quantityRented = Math.max(0, (currentProduct.quantityRented || 0) - qtyToReturnNow);
+                  currentProduct.updatedAt = nowISO;
 
-                      const movementRef = push(ref(db, `products/${item.productId}/stockMovements`));
-                      const newMovement: StockMovement = {
-                          id: movementRef.key!,
-                          date: nowISO,
-                          type: 'rental_in',
-                          quantity: qtyToReturnNow,
-                          quantityBefore: quantityBefore,
-                          quantityAfter: currentProduct.quantityInStock,
-                          notes: `إرجاع ${qtyToReturnNow} قطعة من طلب ${order.orderCode} (الحالة: ${condition === 'good' ? 'جيد' : 'تالف'})`,
-                          orderCode: order.orderCode,
-                          userId: appUser.id,
-                          userName: appUser.fullName,
-                      };
-                      if (!currentProduct.stockMovements) currentProduct.stockMovements = {};
-                      currentProduct.stockMovements[newMovement.id] = newMovement;
-                      currentProduct.updatedAt = nowISO;
-                  }
-                  return currentProduct;
+                  return {
+                      date: nowISO,
+                      type: 'rental_in',
+                      quantity: qtyToReturnNow,
+                      quantityBefore,
+                      quantityAfter: currentProduct.quantityInStock,
+                      notes: `إرجاع ${qtyToReturnNow} قطعة من طلب ${order.orderCode} (الحالة: ${condition === 'good' ? 'جيد' : 'تالف'})`,
+                      orderCode: order.orderCode,
+                      userId: appUser.id,
+                      userName: appUser.fullName,
+                  };
               });
           }
       }

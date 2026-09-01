@@ -77,6 +77,7 @@ export type Product = {
   updatedAt: string; 
   isGlobalProduct?: boolean; 
   isPlaceholder?: boolean;
+  /** @deprecated Legacy embedded movements — use stockMovements/{productId} */
   stockMovements?: Record<string, StockMovement>;
   costPrice?: number;
   isHidden?: boolean; // New field to archive old products
@@ -244,6 +245,14 @@ export type Counter = {
     name: string;
     prefix: string;
     value: number;
+};
+
+/** Per-branch order counter at counters/orders/{branchId} */
+export type BranchOrderCounter = {
+    branchId: string;
+    name: 'orders';
+    value: number;
+    updatedAt?: string;
 };
 
 export type Supplier = {

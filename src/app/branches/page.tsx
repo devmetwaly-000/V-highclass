@@ -1,6 +1,6 @@
 'use client';
 
-import { MoreHorizontal, Phone, PlusCircle, ArrowRight } from 'lucide-react';
+import { MoreHorizontal, Phone, PlusCircle, ArrowRight, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -24,9 +24,10 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { AddBranchDialog } from '@/components/add-branch-dialog';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Branch } from '@/lib/definitions';
+import type { Branch, BranchOrderCounter } from '@/lib/definitions';
+import { getNextOrderNumberFromCounter, isBranchOrderCounter } from '@/lib/order-counter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DeleteBranchDialog } from '@/components/delete-branch-dialog';
 import { WhatsappIcon } from '@/components/icons';
@@ -40,6 +41,7 @@ const requiredPermissions = ['branches:add', 'branches:edit', 'branches:delete']
 function BranchesPageContent() {
     const router = useRouter();
     const { data: branches, isLoading, error } = useRtdbList<Branch>('branches');
+    const { data: orderCounters, isLoading: isLoadingCounters } = useRtdbList<BranchOrderCounter>('counters/orders');
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
     const { toast } = useToast();
     
@@ -102,7 +104,20 @@ function BranchesPageContent() {
         return <div className="text-red-500">حدث خطأ: {error.message}</div>
     }
     
-    const pageIsLoading = isLoading || isLoadingPermissions;
+    const pageIsLoading = isLoading || isLoadingPermissions || isLoadingCounters;
+
+    const counterByBranchId = useMemo(() => {
+        const map = new Map<string, BranchOrderCounter>();
+        orderCounters.forEach((counter) => {
+            if (isBranchOrderCounter(counter)) {
+                map.set(counter.branchId, counter);
+            }
+        });
+        return map;
+    }, [orderCounters]);
+
+    const getNextOrderNumber = (branchId: string) =>
+        getNextOrderNumberFromCounter(counterByBranchId.get(branchId));
 
     const renderMobileCards = () => (
       <div className="grid gap-4 md:hidden">
@@ -125,6 +140,10 @@ function BranchesPageContent() {
                     <p className="text-muted-foreground">{branch.address}</p>
                     <div className="flex items-center gap-2" dir="ltr"><Phone className="h-4 w-4 text-muted-foreground" /><span className="font-mono">{branch.phoneNumber}</span></div>
                     {branch.whatsappNumber && <div className="flex items-center gap-2" dir="ltr"><WhatsappIcon className="h-4 w-4 text-green-500" /><span className="font-mono">{branch.whatsappNumber}</span></div>}
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground border-t pt-2 mt-1">
+                        <Hash className="h-3.5 w-3.5" />
+                        <span>الطلب التالي: <span className="font-mono font-bold text-foreground">{getNextOrderNumber(branch.id)}</span></span>
+                    </div>
                     {branch.notes && <p className="text-xs text-muted-foreground border-t pt-2 mt-2">{branch.notes}</p>}
                 </CardContent>
             </Card>
@@ -136,7 +155,7 @@ function BranchesPageContent() {
         <Card className="hidden md:block">
             <CardContent className="p-0 overflow-x-auto">
                 <Table>
-                    <TableHeader><TableRow><TableHead className="text-right">الاسم</TableHead><TableHead className="text-right">العنوان</TableHead><TableHead className="text-center">الهاتف</TableHead><TableHead className="text-center">واتساب</TableHead><TableHead className="text-center">الإجراءات</TableHead></TableRow></TableHeader>
+                    <TableHeader><TableRow><TableHead className="text-right">الاسم</TableHead><TableHead className="text-right">العنوان</TableHead><TableHead className="text-center">الهاتف</TableHead><TableHead className="text-center">واتساب</TableHead><TableHead className="text-center">رقم الطلب التالي</TableHead><TableHead className="text-center">الإجراءات</TableHead></TableRow></TableHeader>
                     <TableBody>
                         {branches.map((branch) => (
                             <TableRow key={branch.id}>
@@ -144,6 +163,7 @@ function BranchesPageContent() {
                                 <TableCell className="text-right">{branch.address}</TableCell>
                                 <TableCell dir="ltr" className="text-center font-mono">{branch.phoneNumber}</TableCell>
                                 <TableCell dir="ltr" className="text-center font-mono">{branch.whatsappNumber || '-'}</TableCell>
+                                <TableCell className="text-center font-mono font-bold">{getNextOrderNumber(branch.id)}</TableCell>
                                 <TableCell className="text-center">
                                     {(permissions.canBranchesEdit || permissions.canBranchesDelete) && (
                                         <DropdownMenu>
@@ -176,10 +196,10 @@ function BranchesPageContent() {
             </div>
             <Card className="hidden md:block">
                 <Table>
-                    <TableHeader><TableRow><TableHead className="text-right">الاسم</TableHead><TableHead className="text-right">العنوان</TableHead><TableHead className="text-center">الهاتف</TableHead><TableHead className="text-center">واتساب</TableHead><TableHead className="text-center">الإجراءات</TableHead></TableRow></TableHeader>
+                    <TableHeader><TableRow><TableHead className="text-right">الاسم</TableHead><TableHead className="text-right">العنوان</TableHead><TableHead className="text-center">الهاتف</TableHead><TableHead className="text-center">واتساب</TableHead><TableHead className="text-center">رقم الطلب التالي</TableHead><TableHead className="text-center">الإجراءات</TableHead></TableRow></TableHeader>
                     <TableBody>
                         {[...Array(3)].map((_, i) => (
-                            <TableRow key={i}><TableCell><Skeleton className="h-5 w-24" /></TableCell><TableCell><Skeleton className="h-5 w-48" /></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto" /></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto" /></TableCell><TableCell><Skeleton className="h-8 w-8 mx-auto" /></TableCell></TableRow>
+                            <TableRow key={i}><TableCell><Skeleton className="h-5 w-24" /></TableCell><TableCell><Skeleton className="h-5 w-48" /></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto" /></TableCell><TableCell><Skeleton className="h-5 w-32 mx-auto" /></TableCell><TableCell><Skeleton className="h-5 w-20 mx-auto" /></TableCell><TableCell><Skeleton className="h-8 w-8 mx-auto" /></TableCell></TableRow>
                         ))}
                     </TableBody>
                 </Table>
@@ -195,7 +215,8 @@ function BranchesPageContent() {
             <div className="flex flex-col gap-8">
                 {/* Re-created PageHeader manually to isolate click handlers */}
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <div className="flex items-center gap-3">
+                    <div>
+                        <div className="flex items-center gap-3">
                          <Button
                             variant="outline"
                             size="icon"
@@ -208,6 +229,10 @@ function BranchesPageContent() {
                         <h1 onClick={handleTitleClick} className="font-headline text-2xl font-bold tracking-tight md:text-3xl cursor-pointer select-none">
                             الفروع
                         </h1>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-2 mr-11">
+                            كل فرع له عداد طلبات مستقل (فرع → عداد → طلبات). الأرقام لا تتداخل بين الفروع.
+                        </p>
                     </div>
                     <div className="flex items-center gap-2">
                         {(showAddButton && permissions.canBranchesAdd) && (

@@ -1,5 +1,6 @@
-import { ref, runTransaction, push, type Database } from 'firebase/database';
+import type { Database } from 'firebase/database';
 import type { StockMovement } from '@/lib/definitions';
+import { runProductStockTransaction } from '@/lib/stock-movements';
 
 type InventoryUser = {
   id: string;
@@ -13,39 +14,26 @@ export async function applyInventoryCount(
   appUser: InventoryUser,
   notes?: string
 ): Promise<void> {
-  const productRef = ref(db, `products/${productId}`);
+  await runProductStockTransaction(db, productId, (currentData) => {
+    const nowISO = new Date().toISOString();
+    const quantityBefore = currentData.quantityInStock || 0;
+    const quantityAfter = newQuantity;
+    const adjustment = quantityAfter - quantityBefore;
 
-  await runTransaction(productRef, (currentData) => {
-    if (currentData) {
-      const nowISO = new Date().toISOString();
-      const movementRef = push(ref(db, `products/${productId}/stockMovements`));
+    currentData.quantityInStock = quantityAfter;
+    currentData.initialStock = (currentData.initialStock || 0) + adjustment;
+    currentData.updatedAt = nowISO;
 
-      const quantityBefore = currentData.quantityInStock || 0;
-      const quantityAfter = newQuantity;
-      const adjustment = quantityAfter - quantityBefore;
-
-      const newMovement: StockMovement = {
-        id: movementRef.key!,
-        date: nowISO,
-        type: 'inventory',
-        quantity: adjustment,
-        quantityBefore,
-        quantityAfter,
-        notes: notes || 'جرد مخزني',
-        userId: appUser.id,
-        userName: appUser.fullName,
-      };
-
-      currentData.quantityInStock = quantityAfter;
-      currentData.initialStock = (currentData.initialStock || 0) + adjustment;
-      currentData.updatedAt = nowISO;
-
-      if (!currentData.stockMovements) {
-        currentData.stockMovements = {};
-      }
-      currentData.stockMovements[newMovement.id] = newMovement;
-    }
-    return currentData;
+    return {
+      date: nowISO,
+      type: 'inventory',
+      quantity: adjustment,
+      quantityBefore,
+      quantityAfter,
+      notes: notes || 'جرد مخزني',
+      userId: appUser.id,
+      userName: appUser.fullName,
+    };
   });
 }
 

@@ -17,6 +17,7 @@ import { useDatabase } from "@/firebase";
 import { ref, remove } from 'firebase/database';
 import { useToast } from "@/hooks/use-toast";
 import type { Branch } from "@/lib/definitions";
+import { getBranchOrderCounterPath } from '@/lib/order-counter';
 
 type DeleteBranchDialogProps = {
     branch?: Branch;
@@ -32,6 +33,7 @@ export function DeleteBranchDialog({ branch, open, onOpenChange }: DeleteBranchD
     if (!branch) return;
     try {
       await remove(ref(db, `branches/${branch.id}`));
+      await remove(ref(db, getBranchOrderCounterPath(branch.id)));
       toast({
         title: "تم الحذف بنجاح",
         description: `تم حذف فرع "${branch.name}".`,

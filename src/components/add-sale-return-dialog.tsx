@@ -15,10 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order, SaleReturn, Product, StockMovement, Counter, Shift, Expense } from '@/lib/definitions';
+import type { Order, SaleReturn, Product, Counter, Shift, Expense } from '@/lib/definitions';
 import { useDatabase, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { ref, set, push, get, runTransaction, update } from 'firebase/database';
+import { runProductStockTransaction } from '@/lib/stock-movements';
 import { format } from 'date-fns';
 import { Search, Undo2, BadgePercent, DollarSign, AlertCircle, CheckCircle2, Info, Loader2, ShieldAlert, Clock } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
@@ -270,33 +271,25 @@ export function AddSaleReturnDialog({ open, onOpenChange, saleReturn }: SaleRetu
         await update(orderRef, { returnStatus: 'fully_returned' });
 
         for (const productId in selectedItems) {
-            const productRef = ref(db, `products/${productId}`);
             const quantityReturned = selectedItems[productId].quantity;
             if (quantityReturned === 0) continue;
-            
-            await runTransaction(productRef, (currentProduct: Product) => {
-                if (currentProduct) {
-                    const movementRef = push(ref(db, `products/${productId}/stockMovements`));
-                    const quantityBefore = currentProduct.quantityInStock || 0;
-                    currentProduct.quantityInStock = quantityBefore + quantityReturned;
-                    currentProduct.quantitySold = Math.max(0, (currentProduct.quantitySold || 0) - quantityReturned);
 
-                    const newMovement: StockMovement = {
-                        id: movementRef.key!,
-                        date: new Date().toISOString(),
-                        type: 'return',
-                        quantity: quantityReturned,
-                        quantityBefore: quantityBefore,
-                        quantityAfter: currentProduct.quantityInStock,
-                        notes: `مرتجع بيع ${returnCode} من طلب ${foundOrder.orderCode}`,
-                        orderCode: foundOrder.orderCode,
-                        userId: appUser.id,
-                        userName: appUser.fullName,
-                    };
-                    if (!currentProduct.stockMovements) currentProduct.stockMovements = {};
-                    currentProduct.stockMovements[newMovement.id] = newMovement;
-                }
-                return currentProduct;
+            await runProductStockTransaction(db, productId, (currentProduct) => {
+                const quantityBefore = currentProduct.quantityInStock || 0;
+                currentProduct.quantityInStock = quantityBefore + quantityReturned;
+                currentProduct.quantitySold = Math.max(0, (currentProduct.quantitySold || 0) - quantityReturned);
+
+                return {
+                    date: new Date().toISOString(),
+                    type: 'return',
+                    quantity: quantityReturned,
+                    quantityBefore,
+                    quantityAfter: currentProduct.quantityInStock,
+                    notes: `مرتجع بيع ${returnCode} من طلب ${foundOrder.orderCode}`,
+                    orderCode: foundOrder.orderCode,
+                    userId: appUser.id,
+                    userName: appUser.fullName,
+                };
             });
         }
 

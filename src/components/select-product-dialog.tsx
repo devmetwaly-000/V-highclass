@@ -11,16 +11,19 @@ import {
 } from "@/components/ui/dialog";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import type { Product } from '@/lib/definitions';
-import { ChevronsUpDown, Hash, AlertCircle, ShoppingBag, Repeat } from 'lucide-react';
+import { ChevronsUpDown, Hash, AlertCircle, ShoppingBag, CalendarX2 } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
+import { cn } from '@/lib/utils';
 
 type SelectProductDialogProps = {
   products: Product[];
   onProductSelected: (productId: string) => void;
   selectedProductId?: string;
   disabled?: boolean;
+  /** Product IDs already booked for the selected rental period */
+  bookedProductIds?: Set<string>;
 };
 
 export function SelectProductDialog({
@@ -28,6 +31,7 @@ export function SelectProductDialog({
   onProductSelected,
   selectedProductId,
   disabled,
+  bookedProductIds,
 }: SelectProductDialogProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -134,18 +138,29 @@ export function SelectProductDialog({
                 </div>
             )}
             <CommandGroup>
-              {filteredProducts.map((product) => (
+              {filteredProducts.map((product) => {
+                const isBooked = bookedProductIds?.has(product.id);
+                return (
                 <CommandItem
                   key={product.id}
                   value={product.id}
                   onSelect={() => handleSelect(product.id)}
-                  className="cursor-pointer py-3 border-b last:border-0"
+                  className={cn(
+                    "cursor-pointer py-3 border-b last:border-0",
+                    isBooked && "bg-destructive/5 border-destructive/20"
+                  )}
                 >
                   <div className="flex justify-between items-center w-full gap-4">
                     <div className="flex flex-col text-right flex-1">
                         <div className='flex items-center gap-2 mb-1'>
-                            <span className="font-bold text-sm">{product.name} - مقاس {product.size}</span>
+                            <span className={cn("font-bold text-sm", isBooked && "text-destructive")}>{product.name} - مقاس {product.size}</span>
                             {getCategoryBadge(product.category)}
+                            {isBooked && (
+                              <Badge variant="destructive" className="text-[9px] gap-0.5">
+                                <CalendarX2 className="h-2.5 w-2.5" />
+                                محجوز
+                              </Badge>
+                            )}
                         </div>
                         <div className='flex items-center gap-3 text-[10px] text-muted-foreground font-mono'>
                             <span className='flex items-center gap-1'><Hash className='h-2.5 w-2.5'/> {product.productCode}</span>
@@ -156,7 +171,8 @@ export function SelectProductDialog({
                     {selectedProductId === product.id && <div className='w-2 h-2 rounded-full bg-primary' />}
                   </div>
                 </CommandItem>
-              ))}
+              );
+              })}
             </CommandGroup>
           </CommandList>
         </Command>

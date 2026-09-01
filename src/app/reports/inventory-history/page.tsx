@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { AppLayout, AuthGuard } from '@/components/app-layout';
 import React, { useState, useMemo } from 'react';
 import { useRtdbList } from '@/hooks/use-rtdb';
+import { useProductStockMovements } from '@/hooks/use-product-stock-movements';
 import type { Product, StockMovement } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -44,10 +45,10 @@ function InventoryHistoryPageContent() {
     return allProducts.find(p => p.id === selectedProductId) || null;
   }, [allProducts, selectedProductId]);
 
-  const stockMovements = useMemo(() => {
-    if (!foundProduct?.stockMovements) return [];
-    return Object.values(foundProduct.stockMovements).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [foundProduct]);
+  const { stockMovements, isLoading: isLoadingMovements } = useProductStockMovements(
+    selectedProductId || undefined,
+    foundProduct?.stockMovements
+  );
 
   // Filter products locally for better performance when query is long enough
   const filteredProducts = useMemo(() => {
@@ -213,7 +214,14 @@ function InventoryHistoryPageContent() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {stockMovements.map((move) => (
+                            {isLoadingMovements && (
+                                <TableRow>
+                                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                                        جاري تحميل حركات المخزون...
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                            {!isLoadingMovements && stockMovements.map((move) => (
                                 <TableRow key={move.id}>
                                     <TableCell className="font-mono text-[10px] text-right">{formatMovementDate(move.date)}</TableCell>
                                     <TableCell className="text-right">
@@ -240,7 +248,7 @@ function InventoryHistoryPageContent() {
                                     <TableCell className="text-right text-[10px]">{move.userName}</TableCell>
                                 </TableRow>
                             ))}
-                            {stockMovements.length === 0 && (
+                            {!isLoadingMovements && stockMovements.length === 0 && (
                                 <TableRow>
                                     <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">لا توجد حركات مخزون مسجلة لهذا المنتج حتى الآن.</TableCell>
                                 </TableRow>

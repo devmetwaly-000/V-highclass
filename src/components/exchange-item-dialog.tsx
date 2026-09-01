@@ -21,9 +21,10 @@ import {
 } from '@/components/ui/select';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useDatabase, useUser } from '@/firebase';
-import { ref, update, runTransaction, push } from 'firebase/database';
+import { ref, update } from 'firebase/database';
+import { runProductStockTransaction } from '@/lib/stock-movements';
 import { useToast } from '@/hooks/use-toast';
-import type { Order, Product, StockMovement } from '@/lib/definitions';
+import type { Order, Product } from '@/lib/definitions';
 import { format } from 'date-fns';
 import { ArrowLeftRight, Loader2, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react';
 import { SelectProductDialog } from './select-product-dialog';
@@ -72,64 +73,47 @@ export function ExchangeItemDialog({ order, trigger, onSuccess }: ExchangeItemDi
       const orderRef = ref(db, `daily-entries/${datePath}/orders/${order.id}`);
 
       // 1. Return Old Product to Stock
-      const oldProdRef = ref(db, `products/${oldItem.productId}`);
-      await runTransaction(oldProdRef, (p: Product) => {
-          if (p) {
-              const qtyBefore = p.quantityInStock || 0;
-              p.quantityInStock = qtyBefore + oldItem.quantity;
-              if (oldItem.itemTransactionType === 'Rental' || order.transactionType === 'Rental') {
-                  p.quantityRented = Math.max(0, (p.quantityRented || 0) - oldItem.quantity);
-              } else {
-                  p.quantitySold = Math.max(0, (p.quantitySold || 0) - oldItem.quantity);
-              }
-              
-              const moveRef = push(ref(db, `products/${oldItem.productId}/stockMovements`));
-              const move: StockMovement = {
-                  id: moveRef.key!,
-                  date: new Date().toISOString(),
-                  type: 'rental_in',
-                  quantity: oldItem.quantity,
-                  quantityBefore: qtyBefore,
-                  quantityAfter: p.quantityInStock,
-                  notes: `تبديل صنف (إرجاع) - طلب ${order.orderCode}`,
-                  userId: appUser.id,
-                  userName: appUser.fullName
-              };
-              if (!p.stockMovements) p.stockMovements = {};
-              p.stockMovements[move.id] = move;
+      await runProductStockTransaction(db, oldItem.productId, (p) => {
+          const qtyBefore = p.quantityInStock || 0;
+          p.quantityInStock = qtyBefore + oldItem.quantity;
+          if (oldItem.itemTransactionType === 'Rental' || order.transactionType === 'Rental') {
+              p.quantityRented = Math.max(0, (p.quantityRented || 0) - oldItem.quantity);
+          } else {
+              p.quantitySold = Math.max(0, (p.quantitySold || 0) - oldItem.quantity);
           }
-          return p;
+
+          return {
+              date: new Date().toISOString(),
+              type: 'rental_in',
+              quantity: oldItem.quantity,
+              quantityBefore: qtyBefore,
+              quantityAfter: p.quantityInStock,
+              notes: `تبديل صنف (إرجاع) - طلب ${order.orderCode}`,
+              userId: appUser.id,
+              userName: appUser.fullName,
+          };
       });
 
-      // 2. Take New Product from Stock
-      const newProdRef = ref(db, `products/${newProduct.id}`);
-      await runTransaction(newProdRef, (p: Product) => {
-          if (p) {
-              const qtyBefore = p.quantityInStock || 0;
-              p.quantityInStock = qtyBefore - oldItem.quantity;
-              if (oldItem.itemTransactionType === 'Rental' || order.transactionType === 'Rental') {
-                  p.quantityRented = (p.quantityRented || 0) + oldItem.quantity;
-                  p.rentalCount = (p.rentalCount || 0) + oldItem.quantity;
-              } else {
-                  p.quantitySold = (p.quantitySold || 0) + oldItem.quantity;
-              }
-
-              const moveRef = push(ref(db, `products/${newProduct.id}/stockMovements`));
-              const move: StockMovement = {
-                  id: moveRef.key!,
-                  date: new Date().toISOString(),
-                  type: 'rental_out',
-                  quantity: -oldItem.quantity,
-                  quantityBefore: qtyBefore,
-                  quantityAfter: p.quantityInStock,
-                  notes: `تبديل صنف (حجز جديد) - طلب ${order.orderCode}`,
-                  userId: appUser.id,
-                  userName: appUser.fullName
-              };
-              if (!p.stockMovements) p.stockMovements = {};
-              p.stockMovements[move.id] = move;
+      await runProductStockTransaction(db, newProduct.id, (p) => {
+          const qtyBefore = p.quantityInStock || 0;
+          p.quantityInStock = qtyBefore - oldItem.quantity;
+          if (oldItem.itemTransactionType === 'Rental' || order.transactionType === 'Rental') {
+              p.quantityRented = (p.quantityRented || 0) + oldItem.quantity;
+              p.rentalCount = (p.rentalCount || 0) + oldItem.quantity;
+          } else {
+              p.quantitySold = (p.quantitySold || 0) + oldItem.quantity;
           }
-          return p;
+
+          return {
+              date: new Date().toISOString(),
+              type: 'rental_out',
+              quantity: -oldItem.quantity,
+              quantityBefore: qtyBefore,
+              quantityAfter: p.quantityInStock,
+              notes: `تبديل صنف (حجز جديد) - طلب ${order.orderCode}`,
+              userId: appUser.id,
+              userName: appUser.fullName,
+          };
       });
 
       // 3. Update Order

@@ -59,9 +59,9 @@ import Link from 'next/link';
 import React, { useEffect, useState, useMemo, useTransition } from 'react';
 import { PrintLabelDialog } from '@/components/print-label-dialog';
 import type { Product, Branch, Counter } from '@/lib/definitions';
-import { useUser, useDatabase } from '@/firebase';
-import { ref, onValue, query, orderByChild, startAt, get, off } from 'firebase/database';
+import { useUser } from '@/firebase';
 import { useRtdbList } from '@/hooks/use-rtdb';
+import { useSharedProducts } from '@/providers/products-data-provider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { NewOrderDialog } from '@/components/new-order-dialog';
@@ -71,7 +71,6 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { ImportProductsDialog } from '@/components/import-products-dialog';
 import { ProductAvailabilityDialog } from '@/components/product-availability-dialog';
 import { cn } from '@/lib/utils';
-import { db } from '@/lib/db';
 import { Switch } from '@/components/ui/switch';
 import { addDays, format } from 'date-fns';
 import { CountdownBanner } from '@/components/countdown-banner';
@@ -82,18 +81,15 @@ const requiredPermissions = ['products:add', 'products:delete', 'products:print-
 
 function ProductsPageContent() {
     const { settings } = useSettings();
-    const dbRTDB = useDatabase();
     const { appUser } = useUser();
     const { permissions, isLoading: isLoadingPermissions } = usePermissions(requiredPermissions);
+    const { data: allProducts, isLoading: isInitialLocalLoad } = useRtdbList<Product>('products');
+    const sharedProducts = useSharedProducts();
+    const isSyncing = sharedProducts?.isSyncing ?? false;
+    const totalProductsInDb = allProducts.length;
     
     const [currentPage, setCurrentPage] = useState(1);
     const [isPending, startTransition] = useTransition();
-    
-    // --- Local State for Data ---
-    const [allProducts, setAllProducts] = useState<Product[]>([]);
-    const [totalProductsInDb, setTotalProductsInDb] = useState(0);
-    const [isInitialLocalLoad, setIsInitialLocalLoad] = useState(true);
-    const [isSyncing, setIsSyncing] = useState(false);
 
     // --- Search & Filters State ---
     const [searchInput, setSearchInput] = useState('');
@@ -107,111 +103,7 @@ function ProductsPageContent() {
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [isAddProductOpen, setIsAddProductOpen] = useState(false);
 
-    // 1. التحميل الفوري من قاعدة البيانات المحلية (IndexedDB)
-    useEffect(() => {
-        const loadLocalData = async () => {
-            try {
-                const cachedItems = await db.persistentCache.where('path').equals('products').toArray();
-                if (cachedItems.length > 0) {
-                    const loaded = cachedItems.map(item => item.data as Product);
-                    
-                    // ضمان عدم وجود تكرار عند التحميل الأولي من الكاش
-                    const productMap = new Map<string, Product>();
-                    loaded.forEach(p => productMap.set(p.id, p));
-                    const uniqueLoaded = Array.from(productMap.values());
-
-                    // ترتيب الأحدث أولاً
-                    uniqueLoaded.sort((a, b) => (b.updatedAt || b.createdAt || "") > (a.updatedAt || a.createdAt || "") ? 1 : -1);
-                    setAllProducts(uniqueLoaded);
-                }
-            } catch (e) {
-                console.error("Failed to load local cache:", e);
-            } finally {
-                setIsInitialLocalLoad(false);
-            }
-        };
-        loadLocalData();
-    }, []);
-
-    // 2. المزامنة الذكية (Delta Sync) - جلب التحديثات فقط
-    useEffect(() => {
-        if (!dbRTDB) return;
-
-        setIsSyncing(true);
-        const productsRef = ref(dbRTDB, 'products');
-
-        // أ) الحصول على العدد الإجمالي الفعلي للمنتجات
-        get(productsRef).then(snap => {
-            if (snap.exists()) {
-                setTotalProductsInDb(snap.size);
-            }
-        });
-
-        // ب) العثور على تاريخ آخر تحديث محلي لطلب التحديثات الجديدة فقط
-        const startSync = async () => {
-            let lastUpdate = "2000-01-01T00:00:00.000Z";
-            if (allProducts.length > 0) {
-                const sortedByUpdate = [...allProducts].sort((a, b) => 
-                    (b.updatedAt || b.createdAt || "") > (a.updatedAt || a.createdAt || "") ? 1 : -1
-                );
-                lastUpdate = sortedByUpdate[0].updatedAt || sortedByUpdate[0].createdAt || lastUpdate;
-            }
-
-            // الاستماع للتغييرات الجديدة فقط (أو الكل إذا كان الجهاز فارغاً)
-            const syncQuery = query(productsRef, orderByChild('updatedAt'), startAt(lastUpdate));
-            
-            const unsubscribe = onValue(syncQuery, async (snapshot) => {
-                if (snapshot.exists()) {
-                    const newItems = snapshot.val();
-                    const updates: Product[] = [];
-                    
-                    for (const id in newItems) {
-                        const productData = { ...newItems[id], id };
-                        updates.push(productData);
-                        
-                        // تحديث IndexedDB
-                        await db.persistentCache.put({
-                            key: `products/${id}`,
-                            path: 'products',
-                            id: id,
-                            data: productData,
-                            updatedAt: productData.updatedAt || new Date().toISOString()
-                        });
-                    }
-
-                    // دمج البيانات الجديدة مع القديمة بضمان عدم التكرار (ID-based Merge)
-                    setAllProducts(prev => {
-                        const productMap = new Map<string, Product>();
-                        // إضافة المنتجات الحالية للخريطة
-                        prev.forEach(p => productMap.set(p.id, p));
-                        // إضافة/تحديث بالبيانات الجديدة
-                        updates.forEach(newItem => productMap.set(newItem.id, newItem));
-                        
-                        const combined = Array.from(productMap.values());
-                        
-                        // إعادة الترتيب
-                        return combined.sort((a, b) => 
-                            (b.updatedAt || b.createdAt || "") > (a.updatedAt || a.createdAt || "") ? 1 : -1
-                        );
-                    });
-                }
-                setIsSyncing(false);
-            }, (err) => {
-                console.error("Sync Error:", err);
-                setIsSyncing(false);
-            });
-
-            return unsubscribe;
-        };
-
-        const unsubsPromise = startSync();
-        
-        return () => {
-            unsubsPromise.then(unsubs => unsubs());
-        };
-    }, [dbRTDB, isInitialLocalLoad]); // تتم المزامنة بعد تحميل البيانات المحلية
-
-    // 3. Metadata for Filters
+    // Metadata for Filters
     const { data: rawProductGroups } = useRtdbList<{name: string}>('productGroups');
     const { data: rawSizes } = useRtdbList<{name: string}>('sizes');
     const { data: branches } = useRtdbList<Branch>('branches');

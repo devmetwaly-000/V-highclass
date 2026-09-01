@@ -22,7 +22,7 @@ import React, {
   useCallback,
   ReactNode,
 } from 'react';
-import { ref, onValue, off, query, orderByChild, startAt } from 'firebase/database';
+import { ref, onValue, off, query, orderByKey, limitToLast } from 'firebase/database';
 import { useDatabase } from '@/firebase';
 import { db as localDb } from '@/lib/db';
 
@@ -51,6 +51,9 @@ export const SHARED_PATHS = [
   'discountRequests',
   'daily-entries',
 ] as const;
+
+/** Default rolling window for shared daily-entries listener (date keys, not order count). */
+export const DAILY_ENTRIES_SHARED_WINDOW = 120;
 
 export type SharedPath = typeof SHARED_PATHS[number];
 
@@ -171,6 +174,10 @@ export function RtdbDataProvider({ children }: { children: ReactNode }) {
 
     for (const path of SHARED_PATHS) {
       const dbRef = ref(database, path);
+      const syncRef =
+        path === 'daily-entries'
+          ? query(dbRef, orderByKey(), limitToLast(DAILY_ENTRIES_SHARED_WINDOW))
+          : dbRef;
 
       const handleSnapshot = async (snapshot: any) => {
         const val = snapshot.val();
@@ -207,9 +214,9 @@ export function RtdbDataProvider({ children }: { children: ReactNode }) {
         setPath(path, { isLoading: false, error: err });
       };
 
-      onValue(dbRef, handleSnapshot, handleError);
+      onValue(syncRef, handleSnapshot, handleError);
 
-      cleanups.push(() => off(dbRef, 'value', handleSnapshot));
+      cleanups.push(() => off(syncRef, 'value', handleSnapshot));
     }
 
     return () => cleanups.forEach((fn) => fn());
