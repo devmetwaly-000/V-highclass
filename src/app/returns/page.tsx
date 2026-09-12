@@ -30,8 +30,9 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { format, startOfToday, isPast, startOfDay, endOfDay, subDays, addDays } from 'date-fns';
+import { format, startOfToday, isPast, startOfDay, endOfDay } from 'date-fns';
 import type { Order, Branch } from '@/lib/definitions';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useUser } from '@/firebase';
@@ -70,22 +71,49 @@ function ReturnProgress({ order }: { order: Order }) {
 }
 
 function ReturnsPageContent() {
+  const today = startOfToday();
   const [filter, setFilter] = useState<'all' | 'due' | 'overdue' | 'partial'>('all');
   const [branchFilter, setBranchFilter] = useState('all');
-  const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 30));
-  const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 60));
+  const [fromDate, setFromDate] = useState<Date | undefined>(today);
+  const [toDate, setToDate] = useState<Date | undefined>(today);
+  const [orderCodeQuery, setOrderCodeQuery] = useState('');
+  const [productCodeQuery, setProductCodeQuery] = useState('');
+  const [productNameQuery, setProductNameQuery] = useState('');
+  const [customerNameQuery, setCustomerNameQuery] = useState('');
+  const [customerPhoneQuery, setCustomerPhoneQuery] = useState('');
   
   const { appUser } = useUser();
   const { data: allOrders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
   const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
 
   const isLoading = isLoadingOrders || isLoadingBranches;
+
+  const isDefaultDateRange =
+    !!fromDate &&
+    !!toDate &&
+    startOfDay(fromDate).getTime() === startOfToday().getTime() &&
+    startOfDay(toDate).getTime() === startOfToday().getTime();
+
+  const hasActiveFilters =
+    !isDefaultDateRange ||
+    branchFilter !== 'all' ||
+    filter !== 'all' ||
+    !!orderCodeQuery.trim() ||
+    !!productCodeQuery.trim() ||
+    !!productNameQuery.trim() ||
+    !!customerNameQuery.trim() ||
+    !!customerPhoneQuery.trim();
   
   const rentalOrdersToReturn = useMemo(() => {
     if (isLoading) return [];
 
     const start = fromDate ? startOfDay(fromDate) : null;
     const end = toDate ? endOfDay(toDate) : null;
+    const orderCode = orderCodeQuery.trim().toLowerCase();
+    const productCode = productCodeQuery.trim().toLowerCase();
+    const productName = productNameQuery.trim().toLowerCase();
+    const customerName = customerNameQuery.trim().toLowerCase();
+    const customerPhone = customerPhoneQuery.trim().toLowerCase();
 
     let orders = allOrders.filter(order => {
         // 1. استبعاد المرتجع بالكامل أو الملغي
@@ -109,6 +137,13 @@ function ReturnsPageContent() {
             if (!dateMatch) return false;
         }
 
+        // 5. فلاتر البحث النصي
+        if (orderCode && !(order.orderCode || '').toString().toLowerCase().includes(orderCode)) return false;
+        if (customerName && !(order.customerName || '').toLowerCase().includes(customerName)) return false;
+        if (customerPhone && !(order.customerPhone || '').toLowerCase().includes(customerPhone)) return false;
+        if (productCode && !order.items?.some(item => (item.productCode || '').toLowerCase().includes(productCode))) return false;
+        if (productName && !order.items?.some(item => (item.productName || '').toLowerCase().includes(productName))) return false;
+
         return true;
     });
     
@@ -117,8 +152,8 @@ function ReturnsPageContent() {
     } else if (filter === 'partial') {
         orders = orders.filter(o => o.returnStatus === 'partially_returned');
     } else if (filter === 'due') {
-        const today = startOfToday();
-        orders = orders.filter(o => o.returnDate && startOfDay(new Date(o.returnDate)).getTime() === today.getTime());
+        const dueToday = startOfToday();
+        orders = orders.filter(o => o.returnDate && startOfDay(new Date(o.returnDate)).getTime() === dueToday.getTime());
     }
 
     return orders.sort((a, b) => {
@@ -126,13 +161,32 @@ function ReturnsPageContent() {
         const dateB = b.returnDate ? new Date(b.returnDate).getTime() : new Date(b.orderDate).getTime();
         return dateA - dateB; // الأقدم (المستحق أولاً)
     });
-  }, [allOrders, filter, branchFilter, fromDate, toDate, appUser, isLoading]);
+  }, [
+    allOrders,
+    filter,
+    branchFilter,
+    fromDate,
+    toDate,
+    orderCodeQuery,
+    productCodeQuery,
+    productNameQuery,
+    customerNameQuery,
+    customerPhoneQuery,
+    appUser,
+    isLoading,
+  ]);
 
   const clearFilters = () => {
-      setFromDate(undefined);
-      setToDate(undefined);
+      const resetToday = startOfToday();
+      setFromDate(resetToday);
+      setToDate(resetToday);
       setFilter('all');
       setBranchFilter('all');
+      setOrderCodeQuery('');
+      setProductCodeQuery('');
+      setProductNameQuery('');
+      setCustomerNameQuery('');
+      setCustomerPhoneQuery('');
   };
 
   const renderMobileCards = () => (
@@ -281,13 +335,66 @@ function ReturnsPageContent() {
                 <Filter className="h-5 w-5 text-primary" />
                 <CardTitle className="text-lg">تصفية المتابعة</CardTitle>
             </div>
-            {(fromDate || toDate || branchFilter !== 'all' || filter !== 'all') && (
+            {hasActiveFilters && (
                 <Button variant="ghost" size="sm" onClick={clearFilters} className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 gap-1">
                     <XCircle className="h-4 w-4" /> مسح الفلاتر
                 </Button>
             )}
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+             <div className="flex flex-col gap-2">
+                <Label htmlFor="returns-order-code">رقم الطلب</Label>
+                <Input
+                    id="returns-order-code"
+                    placeholder="ابحث برقم الطلب..."
+                    value={orderCodeQuery}
+                    onChange={(e) => setOrderCodeQuery(e.target.value)}
+                    className="h-10"
+                    dir="ltr"
+                />
+            </div>
+             <div className="flex flex-col gap-2">
+                <Label htmlFor="returns-product-code">كود الصنف</Label>
+                <Input
+                    id="returns-product-code"
+                    placeholder="ابحث بكود الصنف..."
+                    value={productCodeQuery}
+                    onChange={(e) => setProductCodeQuery(e.target.value)}
+                    className="h-10"
+                    dir="ltr"
+                />
+            </div>
+             <div className="flex flex-col gap-2">
+                <Label htmlFor="returns-product-name">اسم الصنف</Label>
+                <Input
+                    id="returns-product-name"
+                    placeholder="ابحث باسم الصنف..."
+                    value={productNameQuery}
+                    onChange={(e) => setProductNameQuery(e.target.value)}
+                    className="h-10"
+                />
+            </div>
+             <div className="flex flex-col gap-2">
+                <Label htmlFor="returns-customer-name">اسم العميل</Label>
+                <Input
+                    id="returns-customer-name"
+                    placeholder="ابحث باسم العميل..."
+                    value={customerNameQuery}
+                    onChange={(e) => setCustomerNameQuery(e.target.value)}
+                    className="h-10"
+                />
+            </div>
+             <div className="flex flex-col gap-2">
+                <Label htmlFor="returns-customer-phone">رقم موبايل العميل</Label>
+                <Input
+                    id="returns-customer-phone"
+                    placeholder="ابحث برقم الموبايل..."
+                    value={customerPhoneQuery}
+                    onChange={(e) => setCustomerPhoneQuery(e.target.value)}
+                    className="h-10"
+                    dir="ltr"
+                />
+            </div>
              <div className="flex flex-col gap-2">
                  <Label>حالة الاستلام</Label>
                  <Select value={filter} onValueChange={(v) => setFilter(v as any)}>

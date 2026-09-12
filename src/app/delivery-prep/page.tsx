@@ -31,8 +31,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { format, addDays, startOfDay, endOfDay } from 'date-fns';
+import { format, startOfToday, startOfDay, endOfDay } from 'date-fns';
 import type { Order, Branch, User } from '@/lib/definitions';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useUser, useDatabase } from '@/firebase';
@@ -72,9 +73,15 @@ function formatDate(dateString?: string | Date) {
 
 
 function DeliveryPrepPageContent() {
-  const [fromDate, setFromDate] = useState<Date | undefined>(addDays(new Date(), -14));
-  const [toDate, setToDate] = useState<Date | undefined>(addDays(new Date(), 30));
+  const today = startOfToday();
+  const [fromDate, setFromDate] = useState<Date | undefined>(today);
+  const [toDate, setToDate] = useState<Date | undefined>(today);
   const [selectedBranch, setSelectedBranch] = useState('all');
+  const [orderCodeQuery, setOrderCodeQuery] = useState('');
+  const [productCodeQuery, setProductCodeQuery] = useState('');
+  const [productNameQuery, setProductNameQuery] = useState('');
+  const [customerNameQuery, setCustomerNameQuery] = useState('');
+  const [customerPhoneQuery, setCustomerPhoneQuery] = useState('');
   
   const [deliveringOrder, setDeliveringOrder] = useState<Order | null>(null);
   const [deliveryEmployeeId, setDeliveryEmployeeId] = useState<string>('');
@@ -89,12 +96,44 @@ function DeliveryPrepPageContent() {
   const { permissions, isLoading: isLoadingPermissions } = usePermissions(['orders:add-payment'] as const);
 
   const isLoading = isLoadingOrders || isLoadingBranches;
+
+  const isDefaultDateRange =
+    !!fromDate &&
+    !!toDate &&
+    startOfDay(fromDate).getTime() === startOfToday().getTime() &&
+    startOfDay(toDate).getTime() === startOfToday().getTime();
+
+  const hasActiveFilters =
+    !isDefaultDateRange ||
+    selectedBranch !== 'all' ||
+    !!orderCodeQuery.trim() ||
+    !!productCodeQuery.trim() ||
+    !!productNameQuery.trim() ||
+    !!customerNameQuery.trim() ||
+    !!customerPhoneQuery.trim();
+
+  const clearFilters = () => {
+    const resetToday = startOfToday();
+    setFromDate(resetToday);
+    setToDate(resetToday);
+    setSelectedBranch('all');
+    setOrderCodeQuery('');
+    setProductCodeQuery('');
+    setProductNameQuery('');
+    setCustomerNameQuery('');
+    setCustomerPhoneQuery('');
+  };
   
   const filteredOrders = useMemo(() => {
     if (isLoading) return [];
 
     const start = fromDate ? startOfDay(fromDate) : null;
     const end = toDate ? endOfDay(toDate) : null;
+    const orderCode = orderCodeQuery.trim().toLowerCase();
+    const productCode = productCodeQuery.trim().toLowerCase();
+    const productName = productNameQuery.trim().toLowerCase();
+    const customerName = customerNameQuery.trim().toLowerCase();
+    const customerPhone = customerPhoneQuery.trim().toLowerCase();
 
     return allOrders.filter(order => {
         // استبعاد الملغي والمرتجع
@@ -121,9 +160,28 @@ function DeliveryPrepPageContent() {
             if (end && oDate > end) return false;
         }
 
+        // فلاتر البحث النصي
+        if (orderCode && !(order.orderCode || '').toString().toLowerCase().includes(orderCode)) return false;
+        if (customerName && !(order.customerName || '').toLowerCase().includes(customerName)) return false;
+        if (customerPhone && !(order.customerPhone || '').toLowerCase().includes(customerPhone)) return false;
+        if (productCode && !order.items?.some(item => (item.productCode || '').toLowerCase().includes(productCode))) return false;
+        if (productName && !order.items?.some(item => (item.productName || '').toLowerCase().includes(productName))) return false;
+
         return true;
     });
-  }, [allOrders, fromDate, toDate, selectedBranch, appUser, isLoading]);
+  }, [
+    allOrders,
+    fromDate,
+    toDate,
+    selectedBranch,
+    orderCodeQuery,
+    productCodeQuery,
+    productNameQuery,
+    customerNameQuery,
+    customerPhoneQuery,
+    appUser,
+    isLoading,
+  ]);
 
 
   const { pendingOrders, readyOrders, fromTailorOrders } = useMemo(() => {
@@ -220,13 +278,66 @@ function DeliveryPrepPageContent() {
                 <Filter className="h-5 w-5 text-primary" />
                 <CardTitle>فلترة طلبات التجهيز والتسليم</CardTitle>
             </div>
-            {(fromDate || toDate || selectedBranch !== 'all') && (
-                <Button variant="ghost" size="sm" onClick={() => { setFromDate(undefined); setToDate(undefined); setSelectedBranch('all'); }} className="h-8 gap-1 text-destructive">
+            {hasActiveFilters && (
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 gap-1 text-destructive">
                     <XCircle className="h-4 w-4" /> مسح الفلاتر
                 </Button>
             )}
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label htmlFor="prep-order-code">رقم الطلب</Label>
+                <Input
+                    id="prep-order-code"
+                    placeholder="ابحث برقم الطلب..."
+                    value={orderCodeQuery}
+                    onChange={(e) => setOrderCodeQuery(e.target.value)}
+                    className="h-10"
+                    dir="ltr"
+                />
+            </div>
+            <div className="flex flex-col gap-2">
+                <Label htmlFor="prep-product-code">كود الصنف</Label>
+                <Input
+                    id="prep-product-code"
+                    placeholder="ابحث بكود الصنف..."
+                    value={productCodeQuery}
+                    onChange={(e) => setProductCodeQuery(e.target.value)}
+                    className="h-10"
+                    dir="ltr"
+                />
+            </div>
+            <div className="flex flex-col gap-2">
+                <Label htmlFor="prep-product-name">اسم الصنف</Label>
+                <Input
+                    id="prep-product-name"
+                    placeholder="ابحث باسم الصنف..."
+                    value={productNameQuery}
+                    onChange={(e) => setProductNameQuery(e.target.value)}
+                    className="h-10"
+                />
+            </div>
+            <div className="flex flex-col gap-2">
+                <Label htmlFor="prep-customer-name">اسم العميل</Label>
+                <Input
+                    id="prep-customer-name"
+                    placeholder="ابحث باسم العميل..."
+                    value={customerNameQuery}
+                    onChange={(e) => setCustomerNameQuery(e.target.value)}
+                    className="h-10"
+                />
+            </div>
+            <div className="flex flex-col gap-2">
+                <Label htmlFor="prep-customer-phone">رقم موبايل العميل</Label>
+                <Input
+                    id="prep-customer-phone"
+                    placeholder="ابحث برقم الموبايل..."
+                    value={customerPhoneQuery}
+                    onChange={(e) => setCustomerPhoneQuery(e.target.value)}
+                    className="h-10"
+                    dir="ltr"
+                />
+            </div>
             <div className="flex flex-col gap-2">
                 <Label>من تاريخ تسليم</Label>
                  <DatePickerDialog
