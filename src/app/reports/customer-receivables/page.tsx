@@ -92,7 +92,7 @@ function CustomerReceivablesReportPageContent() {
                   {order.customerName}
                 </p>
               </div>
-              <Badge variant="destructive" className="font-mono font-bold shrink-0">
+              <Badge variant="outline" className="font-mono font-bold shrink-0 bg-[#CD5C5C]/10 text-[#CD5C5C] border-[#CD5C5C]/30">
                 {order.remainingAmount.toLocaleString()} ج.م
               </Badge>
             </div>
@@ -193,7 +193,7 @@ function CustomerReceivablesReportPageContent() {
                       {order.paid.toLocaleString()}
                   </TableCell>
                   <TableCell className="text-center">
-                      <Badge variant="destructive" className="font-mono font-bold text-sm">
+                      <Badge variant="outline" className="font-mono font-bold text-sm bg-[#CD5C5C]/10 text-[#CD5C5C] border-[#CD5C5C]/30">
                           {order.remainingAmount.toLocaleString()} ج.م
                       </Badge>
                   </TableCell>

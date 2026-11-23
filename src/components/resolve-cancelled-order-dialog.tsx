@@ -190,7 +190,7 @@ export function ResolveCancelledOrderDialog({
               تشخيص المشكلة في هذه الفاتورة:
             </div>
             <p className="text-xs leading-relaxed">
-              تم صرف مبلغ <span className="font-bold font-mono text-destructive">{totalRefunded.toLocaleString()} ج.م</span> كمرتجع دفعة للعميل ({order.customerName}) ومسجل في المصروفات والورديات، ولكن الفاتورة لا تزال مسجلة بحالة <Badge variant="outline" className="font-mono bg-white">{order.status}</Badge> وتُحسب ضمن مبيعات الفرع.
+              تم صرف مبلغ <span className="font-bold font-mono text-[#CD5C5C]">{totalRefunded.toLocaleString()} ج.م</span> كمرتجع دفعة للعميل ({order.customerName}) ومسجل في المصروفات والورديات، ولكن الفاتورة لا تزال مسجلة بحالة <Badge variant="outline" className="font-mono bg-white">{order.status}</Badge> وتُحسب ضمن مبيعات الفرع.
             </p>
             {isDuplicateRefund && (
               <div className="mt-2 p-2 rounded bg-amber-100 border border-amber-300 text-xs font-semibold text-amber-950 flex items-center gap-2">
@@ -227,7 +227,7 @@ export function ResolveCancelledOrderDialog({
               {matchingExpenses.map((exp, idx) => (
                 <div key={exp.id || idx} className="flex justify-between items-center text-xs py-1 border-b last:border-b-0">
                   <span className="truncate max-w-[280px]">{exp.description}</span>
-                  <span className="font-mono font-bold text-destructive shrink-0">
+                  <span className="font-mono font-bold text-[#CD5C5C] shrink-0">
                     {exp.amount.toLocaleString()} ج.م
                   </span>
                 </div>

@@ -2,7 +2,7 @@
 
 import React, { useMemo, use, useState, useEffect } from 'react';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import { calculateShiftStats, type BreakdownItem } from '../page';
+import { calculateShiftStats, type BreakdownItem } from '@/lib/shift-utils';
 import type { Order, Shift, Expense, SaleReturn } from '@/lib/definitions';
 import {
   ArrowRight,

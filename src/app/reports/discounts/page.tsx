@@ -135,7 +135,7 @@ function DiscountsReportPageContent() {
             </CardHeader>
             <CardContent>
                 {isLoading ? <Skeleton className="h-10 w-3/4" /> : (
-                    <p className="text-3xl font-bold font-mono text-destructive">
+                    <p className="text-3xl font-bold font-mono text-[#CD5C5C]">
                         {formatCurrency(filteredData.totalDiscount)}
                     </p>
                 )}
@@ -188,7 +188,7 @@ function DiscountsReportPageContent() {
                     <TableCell className="text-center text-xs">{entry.branchName}</TableCell>
                     <TableCell className="text-center text-[10px] font-mono">{formatDate(entry.date)}</TableCell>
                     <TableCell className="text-center text-xs">{entry.appliedBy}</TableCell>
-                    <TableCell className="text-center font-mono font-bold text-destructive">
+                    <TableCell className="text-center font-mono font-bold text-[#CD5C5C]">
                         -{Math.round(entry.amount).toLocaleString()}
                     </TableCell>
                     <TableCell className="text-center font-mono text-xs opacity-70">

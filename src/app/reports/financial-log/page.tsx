@@ -352,7 +352,7 @@ function FinancialLogPageContent() {
                         <div className="text-right">
                             <p className={cn(
                                 "text-lg font-bold font-mono",
-                                t.amount < 0 ? 'text-destructive' : t.amount > 0 ? 'text-green-600' : 'text-foreground'
+                                t.amount < 0 ? 'text-[#CD5C5C]' : t.amount > 0 ? 'text-green-600' : 'text-foreground'
                             )}>
                                 {t.amount.toLocaleString()} ج.م
                             </p>
@@ -444,7 +444,7 @@ function FinancialLogPageContent() {
                         <TrendingDown className="h-4 w-4 text-destructive"/> إجمالي المصروفات والمرتجعات
                     </span>
                     {isInitialLoading ? <Skeleton className="h-8 w-32" /> : (
-                        <span className="font-bold text-xl font-mono text-destructive">{summary.totalExpenses.toLocaleString()} ج.م</span>
+                        <span className="font-bold text-xl font-mono text-[#CD5C5C]">{summary.totalExpenses.toLocaleString()} ج.م</span>
                     )}
                 </CardContent>
             </Card>
@@ -494,7 +494,7 @@ function FinancialLogPageContent() {
                               <TableRow key={b.branchId}>
                                   <TableCell className="font-bold">{b.name}</TableCell>
                                   <TableCell className="text-center font-mono text-green-600">+{b.income.toLocaleString()}</TableCell>
-                                  <TableCell className="text-center font-mono text-destructive">-{b.expenses.toLocaleString()}</TableCell>
+                                  <TableCell className="text-center font-mono font-bold text-[#CD5C5C]">-{b.expenses.toLocaleString()}</TableCell>
                                   <TableCell className="text-center font-mono font-bold text-primary">{(b.income - b.expenses).toLocaleString()} ج.م</TableCell>
                               </TableRow>
                           ))}
@@ -564,7 +564,7 @@ function FinancialLogPageContent() {
                             <TableCell
                                 className={cn(
                                 "text-center font-mono font-semibold",
-                                t.amount < 0 ? 'text-destructive' : t.amount > 0 ? 'text-green-600' : 'text-foreground'
+                                t.amount < 0 ? 'text-[#CD5C5C]' : t.amount > 0 ? 'text-green-600' : 'text-foreground'
                                 )}
                             >
                                 {t.amount.toLocaleString()} ج.م

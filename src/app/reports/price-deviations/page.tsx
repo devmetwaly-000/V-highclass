@@ -146,7 +146,7 @@ function PriceDeviationsPageContent() {
                 </CardTitle>
             </CardHeader>
             <CardContent>
-                <div className="text-2xl font-bold font-mono text-destructive">
+                <div className="text-2xl font-bold font-mono text-[#CD5C5C]">
                     -{formatCurrency(stats.reductions)}
                 </div>
             </CardContent>
@@ -207,7 +207,7 @@ function PriceDeviationsPageContent() {
                     <TableCell className="text-right max-w-[150px] truncate">{d.productName}</TableCell>
                     <TableCell className="text-center font-mono text-xs">{formatCurrency(d.originalPrice)}</TableCell>
                     <TableCell className="text-center font-mono font-semibold text-xs">{formatCurrency(d.actualPrice)}</TableCell>
-                    <TableCell className={cn("text-center font-mono font-bold text-xs", d.difference > 0 ? "text-green-600" : "text-destructive")}>
+                    <TableCell className={cn("text-center font-mono font-bold text-xs", d.difference > 0 ? "text-green-600" : "text-[#CD5C5C]")}>
                         {d.difference > 0 ? `+${d.difference.toLocaleString()}` : d.difference.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-center">{d.quantity}</TableCell>

@@ -175,7 +175,7 @@ function SellerPerformancePageContent() {
                       <div className="flex justify-between"><span>عدد الطلبات:</span> <span className="font-mono">{orderCount}</span></div>
                       <div className="flex justify-between"><span>إيرادات الإيجار:</span> <span className="font-mono">{formatCurrency(rentalRevenue)}</span></div>
                       <div className="flex justify-between"><span>إيرادات البيع:</span> <span className="font-mono">{formatCurrency(salesRevenue + returnAmount)}</span></div>
-                      {returnAmount > 0 && <div className="flex justify-between text-destructive"><span>إجمالي المرتجعات:</span> <span className="font-mono">-{formatCurrency(returnAmount)}</span></div>}
+                      {returnAmount > 0 && <div className="flex justify-between text-[#CD5C5C] font-bold"><span>إجمالي المرتجعات:</span> <span className="font-mono">-{formatCurrency(returnAmount)}</span></div>}
                       <div className="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>صافي الإيرادات:</span> <span className="font-mono text-primary">{formatCurrency(totalRevenue)}</span></div>
                   </CardContent>
               </Card>
@@ -225,7 +225,7 @@ function SellerPerformancePageContent() {
                   <TableCell className="text-center text-xs text-muted-foreground">{seller.role === 'admin' ? 'مدير' : seller.role === 'cashier' ? 'كاشير' : 'بائع'}</TableCell>
                   <TableCell className="text-center font-mono">{orderCount}</TableCell>
                   <TableCell className="text-center font-mono">{formatCurrency(salesRevenue + returnAmount)}</TableCell>
-                  <TableCell className="text-center font-mono text-destructive">-{formatCurrency(returnAmount)}</TableCell>
+                  <TableCell className="text-center font-mono font-bold text-[#CD5C5C]">-{formatCurrency(returnAmount)}</TableCell>
                   <TableCell className="text-center font-mono">{formatCurrency(rentalRevenue)}</TableCell>
                   <TableCell className="text-center font-mono font-bold text-primary">{formatCurrency(totalRevenue)}</TableCell>
                 </TableRow>

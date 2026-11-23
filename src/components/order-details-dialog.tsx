@@ -75,6 +75,8 @@ import { ExchangeItemDialog } from './exchange-item-dialog';
 import { EditPaymentsDialog } from './edit-payments-dialog';
 import { DeletePaymentDialog } from './delete-payment-dialog';
 import { EditTailorNotesDialog } from './edit-tailor-notes-dialog';
+import { printItemTailorSlip } from '@/lib/print-tailor-slip';
+import { useSettings } from '@/hooks/use-settings';
 import { useDatabase, useUser } from '@/firebase';
 import { ref, update } from 'firebase/database';
 import { format } from 'date-fns';
@@ -138,6 +140,7 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
     const { appUser } = useUser();
     const db = useDatabase();
     const { toast } = useToast();
+    const { settings } = useSettings();
     const { data: allOrders } = useRtdbList<Order>('daily-entries', { limit: 100 });
     const { data: customers } = useRtdbList<Customer>('customers');
     const { permissions } = usePermissions([
@@ -441,24 +444,45 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                                                             <p className="text-sm break-words font-medium">{item.tailorNotes}</p>
                                                         </div>
                                                     </div>
-                                                    <EditTailorNotesDialog
-                                                        order={order}
-                                                        itemIndex={index}
-                                                        item={item}
-                                                        trigger={
-                                                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0 text-amber-600 hover:text-amber-700" title="تعديل ملاحظات الخياط">
-                                                                <Pencil className="h-3.5 w-3.5" />
-                                                            </Button>
-                                                        }
-                                                    />
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        <EditTailorNotesDialog
+                                                            order={order}
+                                                            itemIndex={index}
+                                                            item={item}
+                                                            trigger={
+                                                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700" title="تعديل ملاحظات الخياط">
+                                                                    <Pencil className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                            }
+                                                        />
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 w-7 p-0 text-amber-600 hover:text-amber-700"
+                                                            onClick={() => printItemTailorSlip(order, item, item.tailorNotes || '', item.measurements || '', settings)}
+                                                            title="طباعة وصل الخياط لهذا الصنف"
+                                                        >
+                                                            <Printer className="h-3.5 w-3.5" />
+                                                        </Button>
+                                                    </div>
                                                 </div>
                                             ) : (
-                                                <div className="flex justify-end pt-0.5">
+                                                <div className="flex justify-end items-center gap-1.5 pt-0.5">
                                                     <EditTailorNotesDialog
                                                         order={order}
                                                         itemIndex={index}
                                                         item={item}
                                                     />
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-7 px-2.5 text-xs gap-1.5 border-dashed border-amber-500/30 text-amber-700 hover:bg-amber-50 dark:text-amber-300"
+                                                        onClick={() => printItemTailorSlip(order, item, item.tailorNotes || '', item.measurements || '', settings)}
+                                                        title="طباعة وصل الخياط لهذا الصنف"
+                                                    >
+                                                        <Printer className="h-3.5 w-3.5" />
+                                                        طباعة
+                                                    </Button>
                                                 </div>
                                             )}
                                         </div>
@@ -512,17 +536,29 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                                                                 <span className="text-xs text-muted-foreground italic">لا توجد ملاحظات خياط مسجلة لهذا الصنف</span>
                                                             )}
                                                         </div>
-                                                        <EditTailorNotesDialog
-                                                            order={order}
-                                                            itemIndex={index}
-                                                            item={item}
-                                                            trigger={
-                                                                <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs gap-1.5 shrink-0 border-dashed hover:border-primary hover:bg-primary/5 text-primary">
-                                                                    <Pencil className="h-3.5 w-3.5" />
-                                                                    {item.tailorNotes ? 'تعديل ملاحظات الخياط' : 'إضافة ملاحظات خياط'}
-                                                                </Button>
-                                                            }
-                                                        />
+                                                        <div className="flex items-center gap-1.5 shrink-0">
+                                                            <EditTailorNotesDialog
+                                                                order={order}
+                                                                itemIndex={index}
+                                                                item={item}
+                                                                trigger={
+                                                                    <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs gap-1.5 shrink-0 border-dashed hover:border-primary hover:bg-primary/5 text-primary">
+                                                                        <Pencil className="h-3.5 w-3.5" />
+                                                                        {item.tailorNotes ? 'تعديل ملاحظات الخياط' : 'إضافة ملاحظات خياط'}
+                                                                    </Button>
+                                                                }
+                                                            />
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-7 px-2.5 text-xs gap-1.5 shrink-0 border-dashed border-amber-500/30 text-amber-700 hover:bg-amber-50 dark:text-amber-300"
+                                                                onClick={() => printItemTailorSlip(order, item, item.tailorNotes || '', item.measurements || '', settings)}
+                                                                title="طباعة وصل الخياط لهذا الصنف"
+                                                            >
+                                                                <Printer className="h-3.5 w-3.5" />
+                                                                طباعة
+                                                            </Button>
+                                                        </div>
                                                     </div>
                                                 </TableCell>
                                             </TableRow>

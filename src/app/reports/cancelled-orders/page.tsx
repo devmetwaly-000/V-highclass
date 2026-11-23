@@ -201,12 +201,12 @@ function CancelledOrdersReportPageContent() {
         <Card className="bg-muted/40">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium flex items-center gap-2 text-muted-foreground">
-              <FileText className="h-4 w-4 text-destructive" />
+              <FileText className="h-4 w-4 text-[#CD5C5C]" />
               مرتجعات مدفوعة معلقة
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold font-mono text-destructive">
+            <div className="text-2xl font-bold font-mono text-[#CD5C5C]">
               {isLoading ? (
                 <Skeleton className="h-8 w-24" />
               ) : (
@@ -345,7 +345,7 @@ function CancelledOrdersReportPageContent() {
                           </TableCell>
                           <TableCell className="text-center">
                             <div className="flex flex-col items-center">
-                              <span className="font-mono font-black text-xs text-destructive">
+                              <span className="font-mono font-bold text-xs text-[#CD5C5C]">
                                 {totalRefunded.toLocaleString()} ج.م
                               </span>
                               {hasDuplicates && (
@@ -457,7 +457,7 @@ function CancelledOrdersReportPageContent() {
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell className="text-center font-mono font-bold text-destructive">
+                        <TableCell className="text-center font-mono font-bold text-[#CD5C5C]">
                           {(order.total || 0).toLocaleString()} ج.م
                         </TableCell>
                         <TableCell className="text-center">

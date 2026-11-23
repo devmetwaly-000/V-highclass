@@ -14,12 +14,14 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { Scissors, Ruler, Loader2, Pencil, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Scissors, Ruler, Loader2, Pencil, CheckCircle2, AlertCircle, Printer } from 'lucide-react';
 import { useDatabase, useUser } from '@/firebase';
 import { ref, update, get } from 'firebase/database';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import type { Order, OrderItem } from '@/lib/definitions';
+import { printItemTailorSlip } from '@/lib/print-tailor-slip';
+import { useSettings } from '@/hooks/use-settings';
 
 type EditTailorNotesDialogProps = {
   order: Order;
@@ -44,6 +46,7 @@ export function EditTailorNotesDialog({
   const db = useDatabase();
   const { appUser } = useUser();
   const { toast } = useToast();
+  const { settings } = useSettings();
 
   const handleOpenChange = (newOpen: boolean) => {
     if (newOpen) {
@@ -53,7 +56,7 @@ export function EditTailorNotesDialog({
     setOpen(newOpen);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (andPrint: boolean = false) => {
     if (!db || !appUser || !order.id) return;
 
     setIsLoading(true);
@@ -108,6 +111,11 @@ export function EditTailorNotesDialog({
       });
 
       onSuccess?.(trimmedNotes, trimmedMeasurements);
+
+      if (andPrint) {
+        printItemTailorSlip(order, item, trimmedNotes, trimmedMeasurements, settings);
+      }
+
       setOpen(false);
     } catch (error: any) {
       console.error('Error updating tailor notes:', error);
@@ -119,6 +127,10 @@ export function EditTailorNotesDialog({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePrintCurrent = () => {
+    printItemTailorSlip(order, item, tailorNotes.trim(), measurements.trim(), settings);
   };
 
   return (
@@ -176,12 +188,12 @@ export function EditTailorNotesDialog({
           </div>
         </div>
 
-        <DialogFooter className="flex-row-reverse gap-2 sm:gap-0 pt-2 border-t">
+        <DialogFooter className="flex flex-row-reverse sm:justify-start gap-2 pt-2 border-t items-center">
           <Button
             type="button"
-            onClick={handleSave}
+            onClick={() => handleSave(false)}
             disabled={isLoading}
-            className="gap-2 min-w-[120px]"
+            className="gap-1.5 min-w-[110px]"
           >
             {isLoading ? (
               <>
@@ -191,9 +203,19 @@ export function EditTailorNotesDialog({
             ) : (
               <>
                 <CheckCircle2 className="h-4 w-4" />
-                حفظ التعديلات
+                حفظ التعديل
               </>
             )}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => handleSave(true)}
+            disabled={isLoading}
+            className="gap-1.5 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 border border-amber-500/30"
+          >
+            <Printer className="h-4 w-4" />
+            طباعة
           </Button>
           <Button
             type="button"
