@@ -17,8 +17,9 @@ import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { Badge } from '@/components/ui/badge';
 
 function CustomerReceivablesReportPageContent() {
-  const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 30));
-  const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  // الوضع الافتراضي: عرض كافة المستحقات المتراكمة بدون تقييد زمني لضمان عدم إخفاء الديون القديمة
+  const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
+  const [toDate, setToDate] = useState<Date | undefined>(undefined);
 
   const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
   const { data: customers, isLoading: isLoadingCustomers } = useRtdbList<Customer>('customers');
@@ -218,22 +219,32 @@ function CustomerReceivablesReportPageContent() {
       <PageHeader title="تقرير مستحقات العملاء" showBackButton />
 
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
             <div className="flex items-center gap-2">
                 <Filter className="h-5 w-5"/>
-                <CardTitle className="text-lg">فلترة البيانات</CardTitle>
+                <CardTitle className="text-lg">فلترة البيانات حسب تاريخ الطلب</CardTitle>
             </div>
+            {(fromDate || toDate) && (
+                <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => { setFromDate(undefined); setToDate(undefined); }}
+                    className="text-xs"
+                >
+                    عرض كل الديون المتراكمة (إلغاء الفلتر)
+                </Button>
+            )}
         </CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-                <Label>من تاريخ الطلب</Label>
+                <Label>من تاريخ الطلب (اختياري)</Label>
                  <DatePickerDialog
                     value={fromDate}
                     onValueChange={setFromDate}
                  />
             </div>
              <div className="flex flex-col gap-2">
-                <Label>إلى تاريخ الطلب</Label>
+                <Label>إلى تاريخ الطلب (اختياري)</Label>
                  <DatePickerDialog
                     value={toDate}
                     onValueChange={setToDate}

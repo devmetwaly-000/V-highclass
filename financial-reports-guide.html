@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>دليل التقارير المالية والتحليلية والخزينة - V-HighClass</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --primary: #2563eb;
+      --primary-light: #eff6ff;
+      --primary-border: #bfdbfe;
+      --success: #16a34a;
+      --success-light: #f0fdf4;
+      --success-border: #bbf7d0;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --danger-border: #fecaca;
+      --warning: #d97706;
+      --warning-light: #fffbeb;
+      --warning-border: #fde68a;
+      --border: #e2e8f0;
+      --border-dark: #cbd5e1;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-size: 13.5px;
+      line-height: 1.6;
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    .header-badge {
+      display: inline-block;
+      background: var(--primary-light);
+      color: var(--primary);
+      border: 1px solid var(--primary-border);
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-size: 21px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .nav-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .nav-pill {
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      text-decoration: none;
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .nav-pill:hover {
+      background: var(--primary);
+      color: #ffffff;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 32px 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-main);
+    }
+
+    .section-title::before {
+      content: "";
+      width: 4px;
+      height: 18px;
+      background: var(--primary);
+      border-radius: 2px;
+      display: inline-block;
+    }
+
+    .grid-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .report-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .report-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+
+    .report-name {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .report-category {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #f1f5f9;
+      color: #475569;
+    }
+
+    .report-desc {
+      font-size: 12.5px;
+      color: #334155;
+      margin-bottom: 12px;
+    }
+
+    .report-details {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .report-detail-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .detail-label {
+      color: var(--text-muted);
+      font-size: 11.5px;
+    }
+
+    .detail-val {
+      font-weight: 600;
+      color: var(--text-main);
+      font-family: inherit;
+    }
+
+    .mobile-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--success-light);
+      color: var(--success);
+      font-weight: 600;
+      border: 1px solid var(--success-border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 24px;
+      font-size: 12.5px;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      text-align: right;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: #f8fafc;
+      font-weight: 600;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: #f8fafc;
+    }
+
+    .badge-status {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-success { background: var(--success-light); color: var(--success); border: 1px solid var(--success-border); }
+    .badge-danger { background: var(--danger-light); color: var(--danger); border: 1px solid var(--danger-border); }
+    .badge-primary { background: var(--primary-light); color: var(--primary); border: 1px solid var(--primary-border); }
+
+    .formula-box {
+      background: #f8fafc;
+      border: 1px dashed var(--border-dark);
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      font-size: 13px;
+    }
+
+    .formula-title {
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .formula-content {
+      font-family: monospace;
+      direction: ltr;
+      display: inline-block;
+      background: #ffffff;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    .mobile-tips-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+
+    .tip-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-right: 4px solid var(--primary);
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 12.5px;
+    }
+
+    .tip-title {
+      font-weight: 700;
+      font-size: 13px;
+      margin-bottom: 4px;
+      color: var(--text-main);
+    }
+
+    footer {
+      text-align: center;
+      padding: 24px;
+      font-size: 12px;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+      margin-top: 32px;
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 12px 8px; font-size: 13px; }
+      header { padding: 16px; }
+      h1 { font-size: 18px; }
+      .grid-cards { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
+      th, td { padding: 8px 10px; font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- Header -->
+    <header>
+      <span class="header-badge">نظام إدارة فساتين الزفاف والسواريه V-HighClass</span>
+      <h1>دليل التقارير المالية والتحليلية والخزينة والأرباح</h1>
+      <p class="subtitle">دليل شامل لتفسير جميع الشاشات، ومقارنة الأرقام الحسابية، وتجربة الاستخدام المريحة عبر الهاتف المحمول (Light Mode)</p>
+      
+      <div class="nav-pills">
+        <a href="#financial" class="nav-pill">التقارير المالية والسيولة</a>
+        <a href="#analytics" class="nav-pill">تقارير أداء المبيعات</a>
+        <a href="#control" class="nav-pill">تقارير الرقابة والمخزون</a>
+        <a href="#comparison" class="nav-pill">مقارنة وتطابق الأرقام</a>
+        <a href="#mobile-guide" class="nav-pill">إرشادات استخدام الموبايل</a>
+      </div>
+    </header>
+
+    <!-- Formula Box -->
+    <div class="formula-box">
+      <div class="formula-title">القاعدة الذهبية لتطابق الأرقام في النظام:</div>
+      <p style="margin-bottom: 6px; color: #475569;">لا يوجد تضارب في الحسابات، فالنظام يفصل بدقة بين قيمة التعاقدات والسيولة النقدية المحصلة:</p>
+      <div class="formula-content">[إيرادات لوحة التحكم التعاقدية] = [المقبوضات المحصلة في السجل المالي] + [الديون المتبقية في مستحقات العملاء]</div>
+    </div>
+
+    <!-- Section 1: Financial Reports -->
+    <h2 class="section-title" id="financial">1. التقارير المالية والسيولة النقدية (Financial & Cash Flow)</h2>
+    <div class="grid-cards">
+
+      <!-- Dashboard -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">لوحة التحكم (Dashboard)</div>
+            <span class="report-category">مالي / عام</span>
+          </div>
+          <p class="report-desc">شاشة المدير لمتابعة حجم النشاط اليومي والتعاقدات الصادرة وإجمالي المصروفات.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">طبيعة الإيراد:</span>
+            <span class="detail-val">تعاقدي (مجموع الفواتير النشطة)</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">آخر 7 أيام (00:00 إلى 23:59)</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">بطاقات إحصائية متجاوبة</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Financial Log -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">السجل المالي (Financial Log)</div>
+            <span class="report-category">سيولة نقدية</span>
+          </div>
+          <p class="report-desc">دفتر الأستاذ النقدي اليومي؛ يسجل كل جنيه دخل الدرج أو خرج منه فعلياً.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">طبيعة الإيراد:</span>
+            <span class="detail-val">نقدي فعلي (الدفعات المستلمة فقط)</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">اليوم (من 09:00 ص إلى 05:00 ص غداً)</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">بطاقات حركات ملونة (Mobile Cards)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Customer Receivables -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">مستحقات العملاء (Receivables)</div>
+            <span class="report-category">الديون والآجل</span>
+          </div>
+          <p class="report-desc">حصر شامل لجميع المبالغ المتبقية في ذمة العملاء على فواتير البيع والإيجار.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">طبيعة الحساب:</span>
+            <span class="detail-val">تراكمي لحظي (remainingAmount > 0)</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">كافة الديون المتراكمة (بدون حد زمني)</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">بطاقات مديونية + زر عرض الطلب</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Treasuries -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">الخزائن السيادية (Treasuries)</div>
+            <span class="report-category">أرصدة مركزية</span>
+          </div>
+          <p class="report-desc">متابعة الأرصدة التراكمية في: النقدية، فودافون كاش، إنستا باي، وفيزا.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">مصدر التغذية:</span>
+            <span class="detail-val">ترحيل الورديات المغلقة تلقائياً</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">طبيعة الرصيد:</span>
+            <span class="detail-val">رصيد حي مستمر (Current Balance)</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">بطاقات حسابات بنكية واضحة</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cancelled Orders -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">الطلبات الملغاة (Cancelled Orders)</div>
+            <span class="report-category">تسوية ورقابة</span>
+          </div>
+          <p class="report-desc">متابعة الفواتير الملغاة ومعالجة الحالات المعلقة بحاجة لتسوية المخزون ورد النقدية.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">الميزة الحصرية:</span>
+            <span class="detail-val">تبويب الحالات المعلقة الـ 14 مع زر الحل</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">آخر 90 يوماً</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">بطاقات تفاعلية مع نوافذ تأكيد</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Discounts Report -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">تقرير الخصومات (Discounts)</div>
+            <span class="report-category">رقابة إدارية</span>
+          </div>
+          <p class="report-desc">متابعة الخصومات الممنوحة وقيمتها واسم البائع والفرع وتفاصيل الفاتورة الأصلية.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">طريقة الحساب:</span>
+            <span class="detail-val">تجميع discountAmount لكل طلب</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">آخر 30 يوماً</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">جدول بسحب أفقي سلس</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Section 2: Performance Reports -->
+    <h2 class="section-title" id="analytics">2. تقارير أداء المبيعات والنشاط (Sales & Operational Performance)</h2>
+    <div class="grid-cards">
+
+      <!-- Branch Summary -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">ملخص الفروع (Branch Summary)</div>
+            <span class="report-category">أداء فروع</span>
+          </div>
+          <p class="report-desc">مقارنة حجم مبيعات وإيجارات كل فرع (تم تصحيح الخصم المزدوج ليتطابق مع لوحة التحكم).</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">معادلة الإيراد:</span>
+            <span class="detail-val">order.total الصافي مباشرة</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">آخر 30 يوماً</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">بطاقات ملخص لكل فرع</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Seller Performance -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">أداء البائعين (Seller Performance)</div>
+            <span class="report-category">عمولات وتقييم</span>
+          </div>
+          <p class="report-desc">إجمالي مبيعات وتأجيرات كل بائع بعد استقطاع أي فواتير مرتجعة خاصة به.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">معادلة الإيراد:</span>
+            <span class="detail-val">الفواتير المحققة - مرتجعات البيع</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">آخر 30 يوماً</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">بطاقات بائعين مع نسب الإنجاز</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sales by Category -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">المبيعات حسب الفئة (Category)</div>
+            <span class="report-category">تحليل أصناف</span>
+          </div>
+          <p class="report-desc">توزيع الإيرادات والكميات حسب مجموعات الفساتين (زفاف، سواريه، خطوبة، إكسسوارات).</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">حالة الفلترة:</span>
+            <span class="detail-val">مستبعد منها الطلبات الملغاة</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">آخر 30 يوماً</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">رسم بياني متجاوب + جدول</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Product Performance -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">أداء المنتجات (Product Performance)</div>
+            <span class="report-category">حركة القطع</span>
+          </div>
+          <p class="report-desc">إحصائية شاملة لكل قطعة: عدد مرات التأجير، مبيعاتها، وإجمالي دخلها.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">حالة الفلترة:</span>
+            <span class="detail-val">مستبعد منها الطلبات الملغاة</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">آخر 30 يوماً</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">بطاقات فساتين مع كود الصنف</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Region Performance -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">أداء المناطق (Region Performance)</div>
+            <span class="report-category">توزيع جغرافي</span>
+          </div>
+          <p class="report-desc">توزيع الإيرادات والأرباح التشغيلية حسب المحافظات والمدن لخدمة التسويق.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">التصحيح المعتمد:</span>
+            <span class="detail-val">قصر خصم التكلفة على البيع فقط</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">الشهر الحالي (من أول الشهر لآخره)</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">جدول متجاوب مع سحب أفقي</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Section 3: Control & Inventory -->
+    <h2 class="section-title" id="control">3. تقارير الرقابة والمخزون وحالات الإيجار (Control & Inventory)</h2>
+    <div class="grid-cards">
+
+      <!-- Price Deviations -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">انحرافات الأسعار (Price Deviations)</div>
+            <span class="report-category">رقابة الأسعار</span>
+          </div>
+          <p class="report-desc">كشف أي تعديل تم على السعر الرسمي للكتالوج بالزيادة أو التخفيض باسم البائع.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">طريقة الحساب:</span>
+            <span class="detail-val">سعر البيع الفعلي - السعر الأصلي</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">آخر 30 يوماً</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">شارات ملونة للفروقات</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Selling & Rented -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">الأكثر مبيعاً وتأجيراً (Top 20)</div>
+            <span class="report-category">إدارة مشتريات</span>
+          </div>
+          <p class="report-desc">ترتيب أفضل 20 قطعة طلباً لسرعة توفير شبيه لها في المواسم القادمة.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">حالة الفلترة:</span>
+            <span class="detail-val">مستبعد منها الفواتير الملغاة</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الفترة الافتراضية:</span>
+            <span class="detail-val">آخر 30 يوماً</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">قائمة مرتبة سهلة القراءة</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overdue Orders -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">الطلبات المتأخرة (Overdue Orders)</div>
+            <span class="report-category">متابعة إرجاع</span>
+          </div>
+          <p class="report-desc">الفساتين المستأجرة التي تجاوزت موعد الإرجاع ولم تُسلَم للمحل حتى اللحظة.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">المؤشر الأبرز:</span>
+            <span class="detail-val">حساب عدد أيام التأخير باللون الأحمر</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">طبيعة التقرير:</span>
+            <span class="detail-val">لحظي (الوضع الراهن)</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">بطاقات متابعة للاتصال بالعميل</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stagnant Products -->
+      <div class="report-card">
+        <div>
+          <div class="report-card-header">
+            <div class="report-name">المنتجات الراكدة (Stagnant Products)</div>
+            <span class="report-category">تنشيط مخزون</span>
+          </div>
+          <p class="report-desc">القطع والفساتين التي لم تتحرك ولم تُطلب منذ فترة طويلة لعمل عروض عليها.</p>
+        </div>
+        <div class="report-details">
+          <div class="report-detail-row">
+            <span class="detail-label">الحد الافتراضي:</span>
+            <span class="detail-val">90 يوماً دون أي حركة بيع أو إيجار</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">الترتيب:</span>
+            <span class="detail-val">الأطول ركوداً أولاً</span>
+          </div>
+          <div class="report-detail-row">
+            <span class="detail-label">عرض الموبايل:</span>
+            <span class="mobile-badge">جدول مريح مع إمكانية تعديل الأيام</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Section 4: Comparison Table -->
+    <h2 class="section-title" id="comparison">4. جدول مقارنة وتطابق الأرقام بين الشاشات الرئيسية</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>بند المقارنة</th>
+          <th>لوحة التحكم (Dashboard)</th>
+          <th>السجل المالي (Financial Log)</th>
+          <th>ملخص الفروع (Branch Summary)</th>
+          <th>مستحقات العملاء (Receivables)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>نوع الإيراد</strong></td>
+          <td>تعاقدي إجمالي</td>
+          <td>نقدي محصل فعلياً</td>
+          <td>تعاقدي لكل فرع</td>
+          <td>ديون ومتبقيات غير مدفوعة</td>
+        </tr>
+        <tr>
+          <td><strong>المعادلة</strong></td>
+          <td>مجموع <code>order.total</code></td>
+          <td>مجموع <code>payment.amount</code></td>
+          <td>مجموع <code>order.total</code> للفروع</td>
+          <td>مجموع <code>remainingAmount</code></td>
+        </tr>
+        <tr>
+          <td><strong>مثال: فاتورة 1000 دفعت 400 وباقي 600</strong></td>
+          <td>تحسب: <strong>1000 ج.م</strong></td>
+          <td>تحسب: <strong>400 ج.م</strong></td>
+          <td>تحسب: <strong>1000 ج.م</strong></td>
+          <td>تحسب: <strong>600 ج.م</strong></td>
+        </tr>
+        <tr>
+          <td><strong>حالة الخصم</strong></td>
+          <td>صافي بعد الخصم</td>
+          <td>لا يتأثر بالخصم</td>
+          <td>صافي بعد الخصم (تم الإصلاح)</td>
+          <td>صافي بعد الخصم</td>
+        </tr>
+        <tr>
+          <td><strong>الفواتير الملغاة</strong></td>
+          <td><span class="badge-status badge-success">مستبعدة (0 ج.م)</span></td>
+          <td><span class="badge-status badge-danger">تسجل كمرتجع نقدي</span></td>
+          <td><span class="badge-status badge-success">مستبعدة (0 ج.م)</span></td>
+          <td><span class="badge-status badge-success">مستبعدة (0 ج.م)</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Section 5: Mobile UX Guide -->
+    <h2 class="section-title" id="mobile-guide">5. دليل استخدام ومتابعة التقارير من الموبايل (Mobile UX Guide)</h2>
+    <div class="mobile-tips-grid">
+
+      <div class="tip-card">
+        <div class="tip-title">1. استخدام السجل المالي لتقفيل اليوم والدرج</div>
+        <p>عند الرغبة في معرفة النقدية الفعلية ومطابقة محافظ فودافون كاش وإنستا باي والدرج، افتح **السجل المالي**. بطاقات الموبايل فيه ملونة توضح ما دخل وما خرج بدقة لحظية.</p>
+      </div>
+
+      <div class="tip-card">
+        <div class="tip-title">2. استخدام لوحة التحكم لمتابعة حجم المبيعات</div>
+        <p>لمعرفة إجمالي حجم التعاقدات والمبيعات ومقارنة فروعك، افتح **لوحة التحكم** أو **ملخص الفروع**؛ فكلاهما مصمم ليعطيك مؤشرات الإنجاز التعاقدي.</p>
+      </div>
+
+      <div class="tip-card">
+        <div class="tip-title">3. ميزة السحب الأفقي للجداول العريضة</div>
+        <p>إذا فتحت تقريراً يحتوي على جدول عريض (مثل تقرير الخصومات أو انحرافات الأسعار)، يمكنك سحب الجدول بإصبعك يميناً ويساراً بسلاسة دون أن تنضغط البيانات أو تتداخل.</p>
+      </div>
+
+      <div class="tip-card">
+        <div class="tip-title">4. إلغاء الفلتر بضغطة واحدة في الديون</div>
+        <p>في شاشة **مستحقات العملاء**، قمنا بإضافة زر خاص بالأعلى يتيح لك بنقرة واحدة إظهار كافة الديون المتراكمة دون الحاجة لإدخال تواريخ يدوية من الموبايل.</p>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <footer>
+      تم إعداد وتنسيق هذا التقرير ليعمل بسلاسة ووضوح على كافة الشاشات ومتصفحات الهواتف المحمولة.<br>
+      نظام إدارة V-HighClass &copy; 2026 - وضع القراءة النهاري (Light Mode)
+    </footer>
+
+  </div>
+
+</body>
+</html>

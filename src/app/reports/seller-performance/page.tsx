@@ -74,6 +74,7 @@ const calculateSellerPerformance = (
 
   // 1. Process Sales and Rentals
   const filteredOrders = orders.filter(order => {
+    if (order.status === 'Cancelled') return false;
     const orderDate = new Date(order.orderDate);
     const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
     const branchMatch = !branchId || branchId === 'all' || order.branchId === branchId;

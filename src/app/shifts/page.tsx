@@ -214,6 +214,9 @@ export function calculateShiftStats(shift: Shift, allOrders: Order[], allExpense
     });
 
     allExpenses.forEach(e => {
+        // إذا كان المصروف مسدداً من خزينة رئيسية فلا يخصم من نقدية درج الوردية
+        if (e.treasuryId) return;
+
         const eDate = new Date(e.date);
         const expenseIsLinked = e.shiftId === shift.id;
         const isLegacyEMatch = !e.shiftId && 

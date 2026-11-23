@@ -2,20 +2,20 @@
 
 import React, { useState, useMemo } from 'react';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Trash2, AlertCircle, Loader2, Clock } from 'lucide-react';
 import { useDatabase, useUser } from '@/firebase';
-import { ref, update, runTransaction, push, set } from 'firebase/database';
+import { ref, update, runTransaction, push, set, get } from 'firebase/database';
 import { useToast } from '@/hooks/use-toast';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import type { Order, Shift, Product, Expense } from '@/lib/definitions';
@@ -23,11 +23,11 @@ import { format } from 'date-fns';
 import { runProductStockTransaction } from '@/lib/stock-movements';
 import { Label } from './ui/label';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from '@/components/ui/select';
 
 type CancelOrderDialogProps = {
@@ -50,6 +50,15 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
     const handleCancelOrder = async () => {
         if (!appUser || !db || !order.id) return;
 
+        if (order.status === 'Cancelled') {
+            toast({
+                variant: "destructive",
+                title: "الطلب ملغي بالفعل",
+                description: "هذا الطلب تم إلغاؤه سابقاً في النظام.",
+            });
+            return;
+        }
+
         // إذا كان هناك مبالغ مدفوعة، يجب اختيار وردية
         if (order.paid > 0 && !selectedShiftId) {
             toast({
@@ -64,12 +73,33 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
 
         try {
             const nowISO = new Date().toISOString();
-            const datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
-            
+
+            // التحقق الدقيق من مسار التاريخ لتفادي أخطاء الفروق الزمنية
+            let datePath = order.datePath || format(new Date(order.orderDate), 'yyyy-MM-dd');
+            try {
+                const checkSnap = await get(ref(db, `daily-entries/${datePath}/orders/${order.id}`));
+                if (!checkSnap.exists()) {
+                    // البحث الشامل في daily-entries لتحديد المسار الفعلي
+                    const rootSnap = await get(ref(db, 'daily-entries'));
+                    if (rootSnap.exists()) {
+                        const allDays = rootSnap.val();
+                        for (const dk of Object.keys(allDays)) {
+                            if (allDays[dk]?.orders?.[order.id]) {
+                                datePath = dk;
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (pathErr) {
+                console.warn("DatePath verification warning:", pathErr);
+            }
+
             const targetShift = openShifts.find(s => s.id === selectedShiftId);
 
             // 1. Return Stock
-            for (const item of order.items) {
+            for (const item of (order.items || [])) {
+                if (!item.productId) continue;
                 await runProductStockTransaction(db, item.productId, (currentProduct) => {
                     const itemType = item.itemTransactionType || order.transactionType;
                     const quantityBefore = currentProduct.quantityInStock || 0;
@@ -97,35 +127,22 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                 });
             }
 
-            // 2. Create Refund Expense & Update Shift Stats
+            // 2. تحديث إحصائيات الوردية (المرتجعات)
             if (order.paid > 0 && targetShift) {
-                const expenseRef = push(ref(db, 'expenses'));
-                const refundExpense: Omit<Expense, 'id'> = {
-                    description: `إلغاء طلب ورد مبلغ: ${order.orderCode} (${order.customerName})`,
-                    amount: order.paid,
-                    category: 'إلغاء طلبات',
-                    date: nowISO,
-                    userId: appUser.id,
-                    userName: appUser.fullName,
-                    branchId: order.branchId,
-                    branchName: order.branchName,
-                    shiftId: targetShift.id,
-                    notes: `تم رد المبلغ من وردية ${targetShift.cashier.name}`
-                };
-                await set(expenseRef, refundExpense);
-
                 const shiftRef = ref(db, `shifts/${targetShift.id}`);
-                await runTransaction(shiftRef, (currentShift: Shift) => {
+                await runTransaction(shiftRef, (currentShift: any) => {
                     if (currentShift) {
                         currentShift.refunds = (currentShift.refunds || 0) + (order.paid || 0);
-                        // خصم قيمة الفاتورة من إجمالي الوردية
-                        if (order.transactionType === 'Sale') {
-                            currentShift.salesTotal = (currentShift.salesTotal || 0) - (order.total || 0);
-                        } else if (order.transactionType === 'Rental') {
-                            currentShift.rentalsTotal = (currentShift.rentalsTotal || 0) - (order.total || 0);
-                        }
-                        if (order.discountAmount) {
-                            currentShift.discounts = (currentShift.discounts || 0) - order.discountAmount;
+                        // نخصم من إجمالي المبيعات فقط إذا كان الطلب قد أُنشئ أصلاً في نفس الوردية
+                        if (order.shiftId === targetShift.id) {
+                            if (order.transactionType === 'Sale') {
+                                currentShift.salesTotal = (currentShift.salesTotal || 0) - (order.total || 0);
+                            } else if (order.transactionType === 'Rental') {
+                                currentShift.rentalsTotal = (currentShift.rentalsTotal || 0) - (order.total || 0);
+                            }
+                            if (order.discountAmount) {
+                                currentShift.discounts = (currentShift.discounts || 0) - order.discountAmount;
+                            }
                         }
                         currentShift.updatedAt = nowISO;
                     }
@@ -133,11 +150,33 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                 });
             }
 
-            // 4. Mark Order as Cancelled
+            // 3. كتابة سند المصروف وإلغاء الفاتورة معاً في عملية ذرية واحدة (Atomic Update)
             const timestampAr = new Date().toLocaleString('ar-EG');
-            const cancellationNote = `\n[إلغاء] [${timestampAr}] بواسطة ${appUser.fullName}: تم إلغاء الطلب ورد مبلغ ${order.paid.toLocaleString()} ج.م للعميل ${targetShift ? `من وردية ${targetShift.cashier.name}` : ''}.`;
-            
-            const updates: any = {};
+            const cashierName = targetShift?.cashier?.name || '';
+            const cancellationNote = `\n[إلغاء] [${timestampAr}] بواسطة ${appUser.fullName}: تم إلغاء الطلب ورد مبلغ ${order.paid.toLocaleString()} ج.م للعميل ${targetShift ? `من وردية ${cashierName}` : ''}.`;
+
+            const updates: Record<string, any> = {};
+
+            if (order.paid > 0 && targetShift) {
+                const expenseRef = push(ref(db, 'expenses'));
+                const expenseId = expenseRef.key;
+                if (expenseId) {
+                    const refundExpense: Omit<Expense, 'id'> = {
+                        description: `إلغاء طلب ورد مبلغ: ${order.orderCode} (${order.customerName})`,
+                        amount: order.paid,
+                        category: 'إلغاء طلبات',
+                        date: nowISO,
+                        userId: appUser.id,
+                        userName: appUser.fullName,
+                        branchId: order.branchId || targetShift.cashier?.id || '',
+                        branchName: order.branchName || 'الفرع',
+                        shiftId: targetShift.id,
+                        notes: `تم رد المبلغ من وردية ${cashierName}`
+                    };
+                    updates[`expenses/${expenseId}`] = refundExpense;
+                }
+            }
+
             updates[`daily-entries/${datePath}/orders/${order.id}/status`] = 'Cancelled';
             updates[`daily-entries/${datePath}/orders/${order.id}/cancelledAt`] = nowISO;
             updates[`daily-entries/${datePath}/orders/${order.id}/cancelledByUserId`] = appUser.id;
@@ -150,7 +189,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
 
             await update(ref(db), updates);
 
-            toast({ title: "تم إلغاء الطلب وتحديث المخزون والوردية المختارة" });
+            toast({ title: "تم إلغاء الطلب وتحديث المخزون والوردية المختارة بنجاح" });
             onSuccess?.();
         } catch (error: any) {
             console.error("Cancel Order Error:", error);
@@ -177,7 +216,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                         تأكيد إلغاء الطلب {order.orderCode}
                     </AlertDialogTitle>
                     <AlertDialogDescription>
-                        هل أنت متأكد من رغبتك في إلغاء هذا الطلب؟ 
+                        هل أنت متأكد من رغبتك في إلغاء هذا الطلب؟
                         <br /><br />
                         - سيتم تغيير حالة الطلب إلى <span className="font-bold text-destructive">"ملغي"</span>.
                         <br />
@@ -206,7 +245,7 @@ export function CancelOrderDialog({ order, trigger, onSuccess }: CancelOrderDial
                 )}
                 <AlertDialogFooter className="flex-row-reverse gap-2">
                     <AlertDialogCancel disabled={isLoading}>تراجع</AlertDialogCancel>
-                    <AlertDialogAction 
+                    <AlertDialogAction
                         onClick={(e) => { e.preventDefault(); handleCancelOrder(); }}
                         className="bg-destructive hover:bg-destructive/90"
                         disabled={isLoading || (order.paid > 0 && !selectedShiftId)}

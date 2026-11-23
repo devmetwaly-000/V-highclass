@@ -103,6 +103,7 @@ function DashboardPageContent() {
     const end = toDate ? endOfDay(toDate) : null;
 
     const filteredOrders = allOrders.filter(order => {
+        if (order.status === 'Cancelled') return false;
         const orderDate = new Date(order.orderDate);
         const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
         const branchMatch = branchFilter === 'all' || order.branchId === branchFilter;

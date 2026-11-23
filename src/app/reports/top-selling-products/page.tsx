@@ -30,6 +30,7 @@ const getTopSellingProducts = (products: Product[], orders: Order[], fromDate?: 
   const end = toDate ? endOfDay(toDate) : null;
 
   const filteredOrders = orders.filter(order => {
+    if (order.status === 'Cancelled') return false;
     const orderDate = new Date(order.orderDate);
     const isSale = order.transactionType === 'Sale';
     const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);

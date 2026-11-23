@@ -88,13 +88,16 @@ function RegionPerformanceReportPageContent() {
                 stats.rentalsCount++;
             }
 
-            // Calculate cost and profit for items in this order
+            // حساب تكلفة البضاعة المباعة (فقط لحركات البيع Sale حيث تخرج البضاعة نهائياً)
+            // في التأجير Rental يعتبر الفستان أصلاً مؤجراً متكرراً ولا تُخصم تكلفة شرائه بالكامل مع كل إيجار
             order.items.forEach(item => {
-                const product = products.find(p => p.id === item.productId);
-                const costPrice = product?.costPrice || 0;
-                const itemTotalCost = costPrice * item.quantity;
-                
-                stats.totalCost += itemTotalCost;
+                const itemType = item.itemTransactionType || order.transactionType;
+                if (itemType === 'Sale') {
+                    const product = products.find(p => p.id === item.productId);
+                    const costPrice = product?.costPrice || 0;
+                    const itemTotalCost = costPrice * item.quantity;
+                    stats.totalCost += itemTotalCost;
+                }
             });
         }
     });

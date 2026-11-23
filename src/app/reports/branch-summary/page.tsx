@@ -54,15 +54,17 @@ const calculateBranchPerformance = (branches: Branch[], orders: Order[], fromDat
   const end = toDate ? endOfDay(toDate) : null;
 
   const filteredOrders = orders.filter(order => {
+    if (order.status === 'Cancelled') return false;
     const orderDate = new Date(order.orderDate);
     return (!start || orderDate >= start) && (!end || orderDate <= end);
   });
 
-  filteredOrders.forEach(order => {
+    filteredOrders.forEach(order => {
     const perf = performanceMap.get(order.branchId);
     if (perf) {
       perf.orderCount++;
-      const orderTotal = (order.total || 0) - (order.discountAmount || 0);
+      // order.total هو بالأساس صافي قيمة الفاتورة بعد الخصم
+      const orderTotal = order.total || 0;
       perf.totalRevenue += orderTotal;
 
       if (order.transactionType === 'Rental') {

@@ -30,6 +30,7 @@ const getTopRentedProducts = (products: Product[], orders: Order[], fromDate?: D
   const end = toDate ? endOfDay(toDate) : null;
 
   const filteredOrders = orders.filter(order => {
+    if (order.status === 'Cancelled') return false;
     const orderDate = new Date(order.orderDate);
     const isRental = order.transactionType === 'Rental';
     const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);

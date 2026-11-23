@@ -50,6 +50,7 @@ const calculateCategoryPerformance = (products: Product[], orders: Order[], from
     const end = toDate ? endOfDay(toDate) : null;
 
     const filteredOrders = orders.filter(order => {
+        if (order.status === 'Cancelled') return false;
         const orderDate = new Date(order.orderDate);
         return (!start || orderDate >= start) && (!end || orderDate <= end);
     });

@@ -83,6 +83,9 @@ export function EndShiftDialog({ shift, orders, expenses, trigger }: EndShiftDia
     });
 
     expenses.forEach(e => {
+        // إذا كان المصروف مسدداً من خزينة رئيسية فلا يخصم من نقدية درج الوردية
+        if (e.treasuryId) return;
+
         const eDate = new Date(e.date);
         const expenseIsLinked = e.shiftId === shift.id;
         if (expenseIsLinked || (!e.shiftId && e.userId === shift.cashier.id && eDate >= shiftStartTime && eDate <= shiftEndTime)) {

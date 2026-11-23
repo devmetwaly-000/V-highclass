@@ -100,6 +100,7 @@ function FinancialLogPageContent() {
         };
 
         orders.forEach(order => {
+            if (order.status === 'Cancelled') return;
             // Order Entry
             transactions.push({
                 id: order.id,
