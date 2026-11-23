@@ -1,32 +1,42 @@
 
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { PageHeader } from '@/components/page-header';
 import { AppLayout, AuthGuard } from '@/components/app-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LockKeyhole, User, ShieldAlert, AlertCircle } from 'lucide-react';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { User as UserType } from '@/lib/definitions';
+import type { User as UserType, Branch } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useUser } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 
 function UserCredentialsReportPageContent() {
-  const { data: users, isLoading } = useRtdbList<UserType>('users');
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
+  const { data: users, isLoading: isLoadingUsers } = useRtdbList<UserType>('users');
+  const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
   const { appUser } = useUser();
+
+  const isLoading = isLoadingUsers || isLoadingBranches;
 
   const isAuthorized = useMemo(() => {
     return appUser?.username === 'admin' || appUser?.role === 'admin' || appUser?.permissions?.includes('all');
   }, [appUser]);
 
-  // تصفية المستخدمين لاستبعاد مدير النظام (System Administrator)
+  // تصفية المستخدمين لاستبعاد مدير النظام (System Administrator) والفلترة بالفرع
   const displayUsers = useMemo(() => {
-    return users.filter(user => user.username !== 'admin');
-  }, [users]);
+    return users.filter(user => {
+      if (user.username === 'admin') return false;
+      if (selectedBranch !== 'all' && user.branchId !== selectedBranch) return false;
+      return true;
+    });
+  }, [users, selectedBranch]);
 
   if (!isLoading && !isAuthorized) {
     return (
@@ -60,7 +70,17 @@ function UserCredentialsReportPageContent() {
           </div>
           <CardDescription>قائمة بأسماء المستخدمين وكلمات المرور الخاصة بكافة الموظفين المسجلين في النظام.</CardDescription>
         </CardHeader>
-        <CardContent className="p-0 sm:p-6 overflow-x-auto">
+        <CardContent className="p-0 sm:p-6 overflow-x-auto space-y-4">
+          <div className="px-4 sm:px-0 pt-4 sm:pt-0 max-w-xs">
+            <Label className="text-xs font-semibold">تصفية حسب الفرع</Label>
+            <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isLoadingBranches}>
+              <SelectTrigger className="mt-1.5"><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">كل الفروع</SelectItem>
+                {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
           <Table>
             <TableHeader>
               <TableRow>

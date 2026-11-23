@@ -39,6 +39,7 @@ function OutOfStockReportContent() {
   const { data: rawSizes } = useRtdbList<{name: string}>('sizes');
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedBranch, setSelectedBranch] = useState('all');
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedSize, setSelectedSize] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -66,10 +67,11 @@ function OutOfStockReportContent() {
         const matchesGroup = selectedGroup === 'all' || p.group === selectedGroup;
         const matchesSize = selectedSize === 'all' || p.size === selectedSize;
         const matchesCategory = selectedCategory === 'all' || p.category === selectedCategory;
+        const matchesBranch = selectedBranch === 'all' || p.branchId === selectedBranch;
 
-        return isNotHidden && isOutOfStock && matchesSearch && matchesGroup && matchesSize && matchesCategory;
+        return isNotHidden && isOutOfStock && matchesSearch && matchesGroup && matchesSize && matchesCategory && matchesBranch;
     }).sort((a, b) => (a.group || '').localeCompare(b.group || ''));
-  }, [products, searchTerm, selectedGroup, selectedSize, selectedCategory]);
+  }, [products, searchTerm, selectedGroup, selectedSize, selectedCategory, selectedBranch]);
 
   const handleHideProduct = async (productId: string, productName: string) => {
     if (!db) return;
@@ -129,6 +131,21 @@ function OutOfStockReportContent() {
                         onChange={(e) => setSearchTerm(e.target.value)}
                       />
                   </div>
+              </div>
+
+              <div className="space-y-2 text-right">
+                  <Label className="flex items-center gap-2 justify-end">الفرع</Label>
+                  <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                      <SelectTrigger>
+                          <SelectValue placeholder="كل الفروع" />
+                      </SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="all">كل الفروع</SelectItem>
+                          {branches.map(b => (
+                              <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                          ))}
+                      </SelectContent>
+                  </Select>
               </div>
 
               <div className="space-y-2 text-right">

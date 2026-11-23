@@ -22,7 +22,8 @@ import {
   Clock
 } from 'lucide-react';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order, Expense } from '@/lib/definitions';
+import type { Order, Expense, Branch } from '@/lib/definitions';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 import { Label } from '@/components/ui/label';
@@ -37,11 +38,13 @@ import { cn } from '@/lib/utils';
 function CancelledOrdersReportPageContent() {
   const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 90));
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
 
   const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
   const { data: expenses, isLoading: isLoadingExpenses } = useRtdbList<Expense>('expenses');
+  const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
 
-  const isLoading = isLoadingOrders || isLoadingExpenses;
+  const isLoading = isLoadingOrders || isLoadingExpenses || isLoadingBranches;
 
   // 1. استخراج الحالات المعلقة (فواتير سُجل لها مرتجع بالمصروفات وما زالت نشطة)
   const unsettledCases = useMemo<UnsettledOrderCase[]>(() => {
@@ -69,6 +72,7 @@ function CancelledOrdersReportPageContent() {
 
       // الحالة المعلقة: يوجد سند مرتجع ولكن حالة الفاتورة ليست Cancelled
       if (matchingOrder && matchingOrder.status !== 'Cancelled') {
+        if (selectedBranch !== 'all' && matchingOrder.branchId !== selectedBranch) return;
         const orderKey = matchingOrder.id || code;
         if (!map.has(orderKey)) {
           map.set(orderKey, {
@@ -86,7 +90,7 @@ function CancelledOrdersReportPageContent() {
     return Array.from(map.values()).sort(
       (a, b) => (parseInt(b.order.orderCode) || 0) - (parseInt(a.order.orderCode) || 0)
     );
-  }, [orders, expenses, isLoading]);
+  }, [orders, expenses, isLoading, selectedBranch]);
 
   // 2. الطلبات الملغاة نظامياً (status === 'Cancelled')
   const cancelledOrders = useMemo(() => {
@@ -103,14 +107,15 @@ function CancelledOrdersReportPageContent() {
         const cancelDate = new Date(cancelDateStr);
 
         const dateMatch = (!start || cancelDate >= start) && (!end || cancelDate <= end);
-        return dateMatch;
+        const branchMatch = selectedBranch === 'all' || order.branchId === selectedBranch;
+        return dateMatch && branchMatch;
       })
       .sort((a, b) => {
         const dateA = new Date(a.cancelledAt || a.orderDate).getTime();
         const dateB = new Date(b.cancelledAt || b.orderDate).getTime();
         return dateB - dateA;
       });
-  }, [orders, isLoading, fromDate, toDate]);
+  }, [orders, isLoading, fromDate, toDate, selectedBranch]);
 
   const stats = useMemo(() => {
     const totalAmount = cancelledOrders.reduce((sum, o) => sum + (o.total || 0), 0);
@@ -148,6 +153,36 @@ function CancelledOrdersReportPageContent() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="تقرير وإدارة الطلبات الملغاة" showBackButton />
+
+      {/* فلترة الفرع والفترة */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4" />
+            <CardTitle className="text-sm font-bold">فلترة التقرير حسب الفرع والفترة</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="grid sm:grid-cols-3 gap-4">
+          <div className="flex flex-col gap-2">
+            <Label className="text-xs">الفرع</Label>
+            <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isLoadingBranches}>
+              <SelectTrigger><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">كل الفروع</SelectItem>
+                {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label className="text-xs">من تاريخ الإلغاء</Label>
+            <DatePickerDialog value={fromDate} onValueChange={setFromDate} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label className="text-xs">إلى تاريخ الإلغاء</Label>
+            <DatePickerDialog value={toDate} onValueChange={setToDate} fromDate={fromDate} />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* تنبيه بارز في حال وجود فواتير معلقة بحاجة لتسوية */}
       {unsettledCases.length > 0 && (
@@ -385,26 +420,6 @@ function CancelledOrdersReportPageContent() {
 
         {/* ─── التبويب الثاني: الطلبات الملغاة نظامياً ─── */}
         <TabsContent value="regular" className="space-y-4 pt-2">
-          {/* فلترة التاريخ */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4" />
-                <CardTitle className="text-sm font-bold">فلترة الفترة الزمنية للإلغاء</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="flex flex-col gap-2">
-                <Label className="text-xs">من تاريخ الإلغاء</Label>
-                <DatePickerDialog value={fromDate} onValueChange={setFromDate} />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label className="text-xs">إلى تاريخ الإلغاء</Label>
-                <DatePickerDialog value={toDate} onValueChange={setToDate} fromDate={fromDate} />
-              </div>
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader className="pb-3 text-right">
               <CardTitle className="text-base sm:text-lg">سجل الإلغاءات النظامية</CardTitle>

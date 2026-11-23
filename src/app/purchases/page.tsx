@@ -79,6 +79,10 @@ function PurchasesPageContent() {
                             <span className="font-medium">{p.supplierName}</span>
                         </div>
                         <div className="flex justify-between">
+                            <span className="text-muted-foreground">صرف من:</span>
+                            <span className="font-medium text-xs">{p.treasuryName || 'خزينة رئيسية'}</span>
+                        </div>
+                        <div className="flex justify-between">
                             <span className="text-muted-foreground">عدد الأصناف:</span>
                             <span className="font-mono">{p.items.length}</span>
                         </div>
@@ -108,6 +112,7 @@ function PurchasesPageContent() {
                             <TableHead className="text-right">المورد</TableHead>
                             <TableHead className="text-center">التاريخ</TableHead>
                             <TableHead className="text-center">عدد الأصناف</TableHead>
+                            <TableHead className="text-center">صرف من</TableHead>
                             <TableHead className="text-center">التكلفة الإجمالية</TableHead>
                             <TableHead className="text-center">الإجراءات</TableHead>
                         </TableRow>
@@ -119,6 +124,7 @@ function PurchasesPageContent() {
                                 <TableCell className="text-right">{p.supplierName}</TableCell>
                                 <TableCell className="text-center">{formatDate(p.purchaseDate)}</TableCell>
                                 <TableCell className="text-center font-mono">{p.items.length}</TableCell>
+                                <TableCell className="text-center text-xs text-muted-foreground">{p.treasuryName || 'خزينة رئيسية'}</TableCell>
                                 <TableCell className="text-center font-mono font-bold text-primary">{p.totalCost.toLocaleString()} ج.م</TableCell>
                                 <TableCell className="text-center">
                                     <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(p)}>

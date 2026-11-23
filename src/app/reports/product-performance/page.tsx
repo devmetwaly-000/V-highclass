@@ -3,7 +3,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { PageHeader } from '@/components/page-header';
-import type { Product, Order } from '@/lib/definitions';
+import type { Product, Order, Branch } from '@/lib/definitions';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Card,
   CardContent,
@@ -41,7 +42,7 @@ type ProductPerformanceData = {
   profit: number; // New field for profit
 };
 
-const calculateProductPerformance = (products: Product[], orders: Order[], fromDate?: Date, toDate?: Date): ProductPerformanceData[] => {
+const calculateProductPerformance = (products: Product[], orders: Order[], fromDate?: Date, toDate?: Date, branchId?: string): ProductPerformanceData[] => {
   const performanceMap = new Map<string, ProductPerformanceData>();
 
   products.forEach(product => {
@@ -61,6 +62,7 @@ const calculateProductPerformance = (products: Product[], orders: Order[], fromD
   
   const filteredOrders = orders.filter(order => {
     if (order.status === 'Cancelled') return false;
+    if (branchId && branchId !== 'all' && order.branchId !== branchId) return false;
     const orderDate = new Date(order.orderDate);
     return (!start || orderDate >= start) && (!end || orderDate <= end);
   });
@@ -107,15 +109,17 @@ const chartConfig = {
 function ProductPerformancePageContent() {
   const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 30));
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
   
   const { data: products, isLoading: loadingProducts } = useRtdbList<Product>('products');
   const { data: orders, isLoading: loadingOrders } = useRtdbList<Order>('daily-entries');
-  const isLoading = loadingProducts || loadingOrders;
+  const { data: branches, isLoading: loadingBranches } = useRtdbList<Branch>('branches');
+  const isLoading = loadingProducts || loadingOrders || loadingBranches;
 
   const performanceData = useMemo(() => {
     if (isLoading) return [];
-    return calculateProductPerformance(products, orders, fromDate, toDate);
-  }, [products, orders, isLoading, fromDate, toDate]);
+    return calculateProductPerformance(products, orders, fromDate, toDate, selectedBranch);
+  }, [products, orders, isLoading, fromDate, toDate, selectedBranch]);
   
   const topByRevenue = useMemo(() => {
     if (isLoading) return [];
@@ -226,7 +230,17 @@ function ProductPerformancePageContent() {
                 <CardTitle>فلترة البيانات</CardTitle>
             </div>
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="grid sm:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label>الفرع</Label>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={loadingBranches}>
+                    <SelectTrigger><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">كل الفروع</SelectItem>
+                        {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
             <div className="flex flex-col gap-2">
                 <Label>من تاريخ</Label>
                  <DatePickerDialog

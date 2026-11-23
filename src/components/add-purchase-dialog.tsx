@@ -16,16 +16,18 @@ import { Label } from "@/components/ui/label";
 import { DatePickerDialog } from './ui/date-picker-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Supplier, Product, PurchaseOrder, Counter } from '@/lib/definitions';
+import type { Supplier, Product, PurchaseOrder, Counter, Treasury } from '@/lib/definitions';
 import { useDatabase, useUser } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { ref, set, push, get, runTransaction, update } from 'firebase/database';
 import { runProductStockTransaction } from '@/lib/stock-movements';
-import { PlusCircle, Trash2 } from 'lucide-react';
+import { PlusCircle, Trash2, Landmark, Wallet, AlertTriangle } from 'lucide-react';
 import { ProductCombobox } from './product-combobox';
 import { AddProductDialog } from './add-product-dialog';
 import { format } from 'date-fns';
 import { AddSupplierDialog } from './add-supplier-dialog';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 type PurchaseItem = {
     id: string; // Unique ID for React key
@@ -55,10 +57,12 @@ export function AddPurchaseDialog({ open, onOpenChange, purchaseOrder }: AddPurc
     const [notes, setNotes] = useState('');
     const [showAddProduct, setShowAddProduct] = useState(false);
     const [isAddSupplierOpen, setIsAddSupplierOpen] = useState(false);
+    const [treasuryId, setTreasuryId] = useState<string>('');
 
     const { data: suppliers, isLoading: suppliersLoading } = useRtdbList<Supplier>('suppliers');
     const { data: products, isLoading: productsLoading } = useRtdbList<Product>('products');
     const { data: counters, isLoading: countersLoading } = useRtdbList<Counter>('counters');
+    const { data: treasuries, isLoading: treasuriesLoading } = useRtdbList<Treasury>('treasuries');
 
     useEffect(() => {
         if (open) {
@@ -75,14 +79,30 @@ export function AddPurchaseDialog({ open, onOpenChange, purchaseOrder }: AddPurc
                     isNew: false
                 })));
                 setNotes(purchaseOrder.notes || '');
+                setTreasuryId(purchaseOrder.treasuryId || '');
             } else {
                 setSupplierId(undefined);
                 setPurchaseDate(new Date());
                 setItems([]);
                 setNotes('');
+                if (treasuries.length > 0) {
+                    setTreasuryId(treasuries[0].id);
+                } else {
+                    setTreasuryId('');
+                }
             }
         }
-    }, [open, purchaseOrder, isViewMode, products]);
+    }, [open, purchaseOrder, isViewMode, products, treasuries]);
+
+    useEffect(() => {
+        if (!isViewMode && treasuries.length > 0 && !treasuryId) {
+            setTreasuryId(treasuries[0].id);
+        }
+    }, [treasuries, isViewMode, treasuryId]);
+
+    const selectedTreasury = useMemo(() => {
+        return treasuries.find(t => t.id === treasuryId);
+    }, [treasuries, treasuryId]);
     
     const getNextPurchaseCode = useCallback(async () => {
         if (countersLoading) return '';
@@ -176,6 +196,17 @@ export function AddPurchaseDialog({ open, onOpenChange, purchaseOrder }: AddPurc
             return;
         }
 
+        if (!treasuryId) {
+            toast({ variant: 'destructive', title: 'بيانات غير كاملة', description: "الرجاء تحديد الخزينة التي سيتم صرف قيمة الفاتورة منها." });
+            return;
+        }
+
+        const selectedTreasury = treasuries.find(t => t.id === treasuryId);
+        if (!selectedTreasury) {
+            toast({ variant: 'destructive', title: 'خطأ', description: "الخزينة المحددة غير موجودة." });
+            return;
+        }
+
         if (!appUser) {
             toast({ variant: 'destructive', title: 'خطأ', description: 'المستخدم غير معروف.' });
             return;
@@ -205,6 +236,49 @@ export function AddPurchaseDialog({ open, onOpenChange, purchaseOrder }: AddPurc
             });
         }
         
+        const nowISO = new Date().toISOString();
+
+        // الخصم المباشر من رصيد الخزينة وتسجيل حركة الصرف بداخلها
+        const treasuryRef = ref(db, `treasuries/${treasuryId}`);
+        const txRef = push(ref(db, `treasuries/${treasuryId}/transactions`));
+        const txId = txRef.key!;
+
+        await runTransaction(treasuryRef, (t: Treasury) => {
+            if (t) {
+                t.balance = (t.balance || 0) - totalCost;
+                t.updatedAt = nowISO;
+                if (!t.transactions) t.transactions = {};
+                t.transactions[txId] = {
+                    id: txId,
+                    type: 'expense',
+                    amount: -totalCost,
+                    description: `فاتورة مشتريات ${purchaseOrderCode} - مورد: ${suppliers.find(s => s.id === supplierId)?.name || ''}`,
+                    date: nowISO,
+                    userId: appUser.id,
+                    userName: appUser.fullName,
+                    notes: notes || undefined
+                };
+            }
+            return t;
+        });
+
+        // تسجيل المصروف في جدول المصروفات العام مرتبطاً بالخزينة (مستثنى من نقدية الوردية)
+        const expenseRef = push(ref(db, 'expenses'));
+        const expenseId = expenseRef.key!;
+        await set(expenseRef, {
+            id: expenseId,
+            amount: totalCost,
+            category: 'مشتريات وبضاعة',
+            description: `فاتورة مشتريات ${purchaseOrderCode} - مورد: ${suppliers.find(s => s.id === supplierId)?.name || ''}`,
+            date: format(purchaseDate, 'yyyy-MM-dd'),
+            treasuryId: treasuryId,
+            userId: appUser.id,
+            userName: appUser.fullName,
+            notes: `تم الصرف من خزينة: ${selectedTreasury.name}`,
+            createdAt: nowISO,
+            updatedAt: nowISO
+        });
+
         const purchaseData = {
             purchaseOrderCode,
             supplierId,
@@ -212,8 +286,11 @@ export function AddPurchaseDialog({ open, onOpenChange, purchaseOrder }: AddPurc
             purchaseDate: format(purchaseDate, 'yyyy-MM-dd'),
             items: items.map(({ id, productName, isNew, totalCost, ...rest }) => rest),
             totalCost,
+            treasuryId,
+            treasuryName: selectedTreasury.name,
+            expenseId,
             notes,
-            createdAt: new Date().toISOString(),
+            createdAt: nowISO,
             userId: appUser.id,
             userName: appUser.fullName
         };
@@ -224,7 +301,10 @@ export function AddPurchaseDialog({ open, onOpenChange, purchaseOrder }: AddPurc
         
         await set(newPurchaseRef, { ...purchaseData, id: newId });
         
-        toast({ title: "تم حفظ فاتورة الشراء بنجاح" });
+        toast({ 
+            title: "تم حفظ فاتورة الشراء بنجاح",
+            description: `تم خصم ${totalCost.toLocaleString()} ج.م من خزينة (${selectedTreasury.name}) بنجاح.` 
+        });
         onOpenChange(false);
     };
 
@@ -266,6 +346,73 @@ export function AddPurchaseDialog({ open, onOpenChange, purchaseOrder }: AddPurc
                                 <Label htmlFor="purchaseDate">تاريخ الفاتورة</Label>
                                 <DatePickerDialog value={purchaseDate} onValueChange={setPurchaseDate} disabled={isViewMode} />
                             </div>
+                        </div>
+
+                        {/* جهة صرف المبلغ النهائي (الخزينة) */}
+                        <div className="rounded-lg border p-3.5 bg-muted/20 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                    <Landmark className="h-4 w-4 text-primary shrink-0" />
+                                    <div>
+                                        <Label htmlFor="treasury" className="font-bold text-xs sm:text-sm">جهة صرف المبلغ النهائي (الخزينة)</Label>
+                                        <p className="text-[11px] text-muted-foreground">يتم صرف قيمة المشتريات بالكامل من الخزينة الرئيسية المختارة وليس من الوردية</p>
+                                    </div>
+                                </div>
+                                {selectedTreasury && (
+                                    <Badge variant="outline" className="font-mono text-xs gap-1.5 px-2.5 py-1 bg-background self-start sm:self-auto shrink-0">
+                                        <Wallet className="h-3.5 w-3.5 text-muted-foreground" />
+                                        الرصيد الحالي: <span className="font-bold text-primary">{Math.round(selectedTreasury.balance || 0).toLocaleString()} ج.م</span>
+                                    </Badge>
+                                )}
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Select 
+                                    value={treasuryId} 
+                                    onValueChange={setTreasuryId} 
+                                    disabled={treasuriesLoading || isViewMode}
+                                >
+                                    <SelectTrigger id="treasury" className="w-full bg-background">
+                                        <SelectValue placeholder="اختر الخزينة التي سيتم الصرف منها..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {treasuries.map(t => (
+                                            <SelectItem key={t.id} value={t.id} className="py-2">
+                                                <div className="flex items-center justify-between gap-4 w-full">
+                                                    <span className="font-semibold">{t.name}</span>
+                                                    <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                                                        الرصيد: {Math.round(t.balance || 0).toLocaleString()} ج.م
+                                                    </span>
+                                                </div>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {selectedTreasury && totalCost > 0 && !isViewMode && (
+                                <div className={cn(
+                                    "p-2.5 rounded-md text-xs flex items-center justify-between border",
+                                    selectedTreasury.balance >= totalCost 
+                                        ? "bg-green-500/10 border-green-500/30 text-green-800 dark:text-green-300"
+                                        : "bg-destructive/10 border-destructive/30 text-[#CD5C5C] font-bold"
+                                )}>
+                                    <div className="flex items-center gap-2">
+                                        {selectedTreasury.balance < totalCost && <AlertTriangle className="h-4 w-4 shrink-0" />}
+                                        <span>
+                                            {selectedTreasury.balance >= totalCost 
+                                                ? `سيتم خصم ${totalCost.toLocaleString()} ج.م من (${selectedTreasury.name}) - الرصيد بعد الخصم: ${(selectedTreasury.balance - totalCost).toLocaleString()} ج.م`
+                                                : `تنبيه: رصيد الخزينة (${Math.round(selectedTreasury.balance).toLocaleString()} ج.م) أقل من قيمة الفاتورة (${totalCost.toLocaleString()} ج.م).`}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {isViewMode && purchaseOrder?.treasuryName && (
+                                <div className="text-xs text-muted-foreground">
+                                    تم صرف هذه الفاتورة من خزينة: <strong className="text-foreground">{purchaseOrder.treasuryName}</strong>
+                                </div>
+                            )}
                         </div>
                         
                         <div className="space-y-4">

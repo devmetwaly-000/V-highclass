@@ -4,7 +4,8 @@
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { Product, Order } from '@/lib/definitions';
+import type { Product, Order, Branch } from '@/lib/definitions';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TrendingUp, Filter } from 'lucide-react';
 import Link from 'next/link';
 import { useRtdbList } from '@/hooks/use-rtdb';
@@ -23,7 +24,7 @@ type ProductCount = {
   count: number;
 };
 
-const getTopSellingProducts = (products: Product[], orders: Order[], fromDate?: Date, toDate?: Date): ProductCount[] => {
+const getTopSellingProducts = (products: Product[], orders: Order[], fromDate?: Date, toDate?: Date, branchId?: string): ProductCount[] => {
   const salesCounts = new Map<string, number>();
 
   const start = fromDate ? startOfDay(fromDate) : null;
@@ -31,6 +32,7 @@ const getTopSellingProducts = (products: Product[], orders: Order[], fromDate?: 
 
   const filteredOrders = orders.filter(order => {
     if (order.status === 'Cancelled') return false;
+    if (branchId && branchId !== 'all' && order.branchId !== branchId) return false;
     const orderDate = new Date(order.orderDate);
     const isSale = order.transactionType === 'Sale';
     const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
@@ -61,15 +63,17 @@ const getTopSellingProducts = (products: Product[], orders: Order[], fromDate?: 
 function TopSellingProductsPageContent() {
     const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 30));
     const [toDate, setToDate] = useState<Date | undefined>(new Date());
+    const [selectedBranch, setSelectedBranch] = useState<string>('all');
 
     const { data: products, isLoading: loadingProducts } = useRtdbList<Product>('products');
     const { data: orders, isLoading: loadingOrders } = useRtdbList<Order>('daily-entries');
-    const isLoading = loadingProducts || loadingOrders;
+    const { data: branches, isLoading: loadingBranches } = useRtdbList<Branch>('branches');
+    const isLoading = loadingProducts || loadingOrders || loadingBranches;
 
     const topProducts = useMemo(() => {
         if (isLoading) return [];
-        return getTopSellingProducts(products, orders, fromDate, toDate);
-    }, [products, orders, isLoading, fromDate, toDate]);
+        return getTopSellingProducts(products, orders, fromDate, toDate, selectedBranch);
+    }, [products, orders, isLoading, fromDate, toDate, selectedBranch]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -82,7 +86,17 @@ function TopSellingProductsPageContent() {
                 <CardTitle>فلترة البيانات</CardTitle>
             </div>
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="grid sm:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label>الفرع</Label>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={loadingBranches}>
+                    <SelectTrigger><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">كل الفروع</SelectItem>
+                        {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
             <div className="flex flex-col gap-2">
                 <Label>من تاريخ</Label>
                  <DatePickerDialog

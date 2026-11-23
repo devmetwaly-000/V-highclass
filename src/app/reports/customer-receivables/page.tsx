@@ -8,7 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Filter, HandCoins, User, Calendar, Eye, Phone, DollarSign } from 'lucide-react';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order, Customer } from '@/lib/definitions';
+import type { Order, Customer, Branch } from '@/lib/definitions';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 import { Label } from '@/components/ui/label';
@@ -20,11 +21,13 @@ function CustomerReceivablesReportPageContent() {
   // الوضع الافتراضي: عرض كافة المستحقات المتراكمة بدون تقييد زمني لضمان عدم إخفاء الديون القديمة
   const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
   const [toDate, setToDate] = useState<Date | undefined>(undefined);
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
 
   const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
   const { data: customers, isLoading: isLoadingCustomers } = useRtdbList<Customer>('customers');
+  const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
 
-  const isLoading = isLoadingOrders || isLoadingCustomers;
+  const isLoading = isLoadingOrders || isLoadingCustomers || isLoadingBranches;
 
   const receivables = useMemo(() => {
     if (isLoading) return [];
@@ -37,7 +40,8 @@ function CustomerReceivablesReportPageContent() {
         
         const orderDate = new Date(order.orderDate);
         const dateMatch = (!start || orderDate >= start) && (!end || orderDate <= end);
-        return dateMatch;
+        const branchMatch = selectedBranch === 'all' || order.branchId === selectedBranch;
+        return dateMatch && branchMatch;
     }).map(order => {
         const customer = customers.find(c => c.id === order.customerId);
         return {
@@ -45,7 +49,7 @@ function CustomerReceivablesReportPageContent() {
             customerPhone: customer?.primaryPhone || '-',
         };
     }).sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
-  }, [orders, customers, isLoading, fromDate, toDate]);
+  }, [orders, customers, isLoading, fromDate, toDate, selectedBranch]);
 
   const stats = useMemo(() => {
       const totalReceivable = receivables.reduce((sum, o) => sum + (o.remainingAmount || 0), 0);
@@ -235,7 +239,17 @@ function CustomerReceivablesReportPageContent() {
                 </Button>
             )}
         </CardHeader>
-        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label>الفرع</Label>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isLoadingBranches}>
+                    <SelectTrigger><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">كل الفروع</SelectItem>
+                        {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
             <div className="flex flex-col gap-2">
                 <Label>من تاريخ الطلب (اختياري)</Label>
                  <DatePickerDialog

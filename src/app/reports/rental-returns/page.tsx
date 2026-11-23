@@ -9,7 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Filter, Undo2, UserCheck, Calendar, Eye, FileText, CheckCircle2 } from 'lucide-react';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order } from '@/lib/definitions';
+import type { Order, Branch } from '@/lib/definitions';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 import { Label } from '@/components/ui/label';
@@ -20,8 +21,12 @@ import { cn } from '@/lib/utils';
 function RentalReturnsReportPageContent() {
   const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 30));
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
 
-  const { data: orders, isLoading } = useRtdbList<Order>('daily-entries');
+  const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+  const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
+
+  const isLoading = isLoadingOrders || isLoadingBranches;
 
   const returnedOrders = useMemo(() => {
     if (isLoading) return [];
@@ -32,6 +37,7 @@ function RentalReturnsReportPageContent() {
     return orders.filter(order => {
         if (order.status !== 'Returned') return false;
         if (order.transactionType !== 'Rental') return false;
+        if (selectedBranch !== 'all' && order.branchId !== selectedBranch) return false;
         
         const returnDateStr = order.returnedAt || order.orderDate;
         const actualReturnDate = new Date(returnDateStr);
@@ -43,7 +49,7 @@ function RentalReturnsReportPageContent() {
         const dateB = new Date(b.returnedAt || b.orderDate).getTime();
         return dateB - dateA;
     });
-  }, [orders, isLoading, fromDate, toDate]);
+  }, [orders, isLoading, fromDate, toDate, selectedBranch]);
 
   const stats = useMemo(() => {
       return { count: returnedOrders.length };
@@ -72,7 +78,17 @@ function RentalReturnsReportPageContent() {
             </div>
             <CardDescription>عرض فواتير الإيجار التي تم استلامها وفحصها خلال الفترة المحددة.</CardDescription>
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="grid sm:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label>الفرع</Label>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isLoadingBranches}>
+                    <SelectTrigger><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">كل الفروع</SelectItem>
+                        {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
             <div className="flex flex-col gap-2">
                 <Label>من تاريخ الاستلام</Label>
                  <DatePickerDialog

@@ -4,7 +4,8 @@
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { Product, Order } from '@/lib/definitions';
+import type { Product, Order, Branch } from '@/lib/definitions';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TrendingDown } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
@@ -50,9 +51,12 @@ const getProductsMovementInfo = (products: Product[], orders: Order[]): Map<stri
 
 function StagnantProductsPageContent() {
     const [stagnantDaysThreshold, setStagnantDaysThreshold] = useState(90);
+    const [selectedBranch, setSelectedBranch] = useState<string>('all');
+
     const { data: products, isLoading: loadingProducts } = useRtdbList<Product>('products');
     const { data: orders, isLoading: loadingOrders } = useRtdbList<Order>('daily-entries');
-    const isLoading = loadingProducts || loadingOrders;
+    const { data: branches, isLoading: loadingBranches } = useRtdbList<Branch>('branches');
+    const isLoading = loadingProducts || loadingOrders || loadingBranches;
 
     const productMovementInfo = useMemo(() => {
         if (isLoading) return new Map();
@@ -72,9 +76,12 @@ function StagnantProductsPageContent() {
                 moveCount: movement.moveCount,
                 lastMovedDate: movement.lastMoved
             };
-        }).filter(p => p.daysSinceLastMove >= stagnantDaysThreshold)
-          .sort((a, b) => b.daysSinceLastMove - a.daysSinceLastMove);
-    }, [products, productMovementInfo, stagnantDaysThreshold]);
+        }).filter(p => {
+            if (p.daysSinceLastMove < stagnantDaysThreshold) return false;
+            if (selectedBranch !== 'all' && p.branchId && p.branchId !== selectedBranch) return false;
+            return true;
+        }).sort((a, b) => b.daysSinceLastMove - a.daysSinceLastMove);
+    }, [products, productMovementInfo, stagnantDaysThreshold, selectedBranch]);
 
     const formatDate = (date?: Date) => {
         if (!date) return 'لا يوجد';
@@ -95,15 +102,27 @@ function StagnantProductsPageContent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-            <div className="max-w-xs mb-6">
-                <Label htmlFor="stagnant-days">عرض الأصناف التي لم تتحرك منذ (يوم)</Label>
-                <Input
-                    id="stagnant-days"
-                    type="number"
-                    value={stagnantDaysThreshold}
-                    onChange={(e) => setStagnantDaysThreshold(Number(e.target.value))}
-                    className="mt-2"
-                />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mb-6">
+                <div>
+                    <Label>الفرع</Label>
+                    <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={loadingBranches}>
+                        <SelectTrigger className="mt-2"><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">كل الفروع</SelectItem>
+                            {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div>
+                    <Label htmlFor="stagnant-days">لم تتحرك منذ (يوم)</Label>
+                    <Input
+                        id="stagnant-days"
+                        type="number"
+                        value={stagnantDaysThreshold}
+                        onChange={(e) => setStagnantDaysThreshold(Number(e.target.value))}
+                        className="mt-2"
+                    />
+                </div>
             </div>
           <Table>
             <TableHeader>

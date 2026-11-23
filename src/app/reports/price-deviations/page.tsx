@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Filter, ArrowUpRight, ArrowDownRight, CircleDollarSign, TrendingUp, TrendingDown, Eye, User, BookUser } from 'lucide-react';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order } from '@/lib/definitions';
+import type { Order, Branch } from '@/lib/definitions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 import { Label } from '@/components/ui/label';
@@ -38,8 +38,12 @@ function PriceDeviationsPageContent() {
   const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 30));
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
   const [typeFilter, setTypeFilter] = useState<'all' | 'reduction' | 'increase'>('all');
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
 
-  const { data: orders, isLoading } = useRtdbList<Order>('daily-entries');
+  const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+  const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
+
+  const isLoading = isLoadingOrders || isLoadingBranches;
 
   const deviations = useMemo((): DeviationEntry[] => {
     if (isLoading) return [];
@@ -50,6 +54,7 @@ function PriceDeviationsPageContent() {
     const entries: DeviationEntry[] = [];
 
     orders.forEach(order => {
+        if (selectedBranch !== 'all' && order.branchId !== selectedBranch) return;
         const orderDate = new Date(order.orderDate);
         if ((start && orderDate < start) || (end && orderDate > end)) return;
 
@@ -84,7 +89,7 @@ function PriceDeviationsPageContent() {
     });
 
     return entries.sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
-  }, [orders, isLoading, fromDate, toDate, typeFilter]);
+  }, [orders, isLoading, fromDate, toDate, typeFilter, selectedBranch]);
 
   const stats = useMemo(() => {
       const reductions = deviations.filter(d => d.type === 'reduction').reduce((sum, d) => sum + Math.abs(d.totalDifference), 0);
@@ -106,6 +111,18 @@ function PriceDeviationsPageContent() {
             </div>
         </CardHeader>
         <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label>الفرع</Label>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isLoadingBranches}>
+                    <SelectTrigger>
+                        <SelectValue placeholder="كل الفروع" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">كل الفروع</SelectItem>
+                        {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
             <div className="flex flex-col gap-2">
                 <Label>من تاريخ</Label>
                  <DatePickerDialog

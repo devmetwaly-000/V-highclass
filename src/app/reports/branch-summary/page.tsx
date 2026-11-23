@@ -27,6 +27,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout } from '@/components/app-layout';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { subDays, startOfDay, endOfDay } from 'date-fns';
 
 type BranchPerformanceData = {
@@ -37,10 +38,12 @@ type BranchPerformanceData = {
   salesRevenue: number;
 };
 
-const calculateBranchPerformance = (branches: Branch[], orders: Order[], fromDate?: Date, toDate?: Date): BranchPerformanceData[] => {
+const calculateBranchPerformance = (branches: Branch[], orders: Order[], fromDate?: Date, toDate?: Date, branchId?: string): BranchPerformanceData[] => {
   const performanceMap = new Map<string, BranchPerformanceData>();
 
-  branches.forEach(branch => {
+  const targetBranches = branchId && branchId !== 'all' ? branches.filter(b => b.id === branchId) : branches;
+
+  targetBranches.forEach(branch => {
     performanceMap.set(branch.id, {
       branch,
       orderCount: 0,
@@ -55,6 +58,7 @@ const calculateBranchPerformance = (branches: Branch[], orders: Order[], fromDat
 
   const filteredOrders = orders.filter(order => {
     if (order.status === 'Cancelled') return false;
+    if (branchId && branchId !== 'all' && order.branchId !== branchId) return false;
     const orderDate = new Date(order.orderDate);
     return (!start || orderDate >= start) && (!end || orderDate <= end);
   });
@@ -85,6 +89,7 @@ const chartConfig = {
 function BranchSummaryPageContent() {
   const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 30));
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
   
   const { data: branches, isLoading: loadingBranches } = useRtdbList<Branch>('branches');
   const { data: orders, isLoading: loadingOrders } = useRtdbList<Order>('daily-entries');
@@ -93,8 +98,8 @@ function BranchSummaryPageContent() {
   
   const performanceData = useMemo(() => {
       if (isLoading) return [];
-      return calculateBranchPerformance(branches, orders, fromDate, toDate);
-  }, [branches, orders, fromDate, toDate, isLoading]);
+      return calculateBranchPerformance(branches, orders, fromDate, toDate, selectedBranch);
+  }, [branches, orders, fromDate, toDate, isLoading, selectedBranch]);
 
   const formatCurrency = (amount: number) => {
     return `${amount.toLocaleString()} ج.م`;
@@ -186,7 +191,17 @@ function BranchSummaryPageContent() {
                 <CardTitle>فلترة البيانات</CardTitle>
             </div>
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="grid sm:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label>الفرع</Label>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={loadingBranches}>
+                    <SelectTrigger><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">كل الفروع</SelectItem>
+                        {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
             <div className="flex flex-col gap-2">
                 <Label>من تاريخ</Label>
                  <DatePickerDialog

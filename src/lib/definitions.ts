@@ -282,6 +282,9 @@ export type PurchaseOrder = {
     createdAt: string;
     userId: string;
     userName: string;
+    treasuryId?: string;
+    treasuryName?: string;
+    expenseId?: string;
 };
 
 export type SaleReturnItem = {

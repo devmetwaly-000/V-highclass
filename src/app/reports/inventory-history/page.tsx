@@ -8,7 +8,9 @@ import { AppLayout, AuthGuard } from '@/components/app-layout';
 import React, { useState, useMemo } from 'react';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { useProductStockMovements } from '@/hooks/use-product-stock-movements';
-import type { Product, StockMovement } from '@/lib/definitions';
+import type { Product, StockMovement, Branch } from '@/lib/definitions';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -38,7 +40,10 @@ function InventoryHistoryPageContent() {
   const [open, setOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedBranch, setSelectedBranch] = useState("all");
+
   const { data: allProducts, isLoading: isLoadingProducts } = useRtdbList<Product>('products');
+  const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
 
   const foundProduct = useMemo(() => {
     if (!selectedProductId) return null;
@@ -54,11 +59,11 @@ function InventoryHistoryPageContent() {
   const filteredProducts = useMemo(() => {
     if (searchQuery.length < 5) return [];
     const q = searchQuery.toLowerCase();
-    return allProducts.filter(p => 
-      p.name?.toLowerCase().includes(q) || 
-      p.productCode?.toLowerCase().includes(q)
-    ).slice(0, 50); // Limit results for snappiness
-  }, [allProducts, searchQuery]);
+    return allProducts.filter(p => {
+      if (selectedBranch !== 'all' && p.branchId && p.branchId !== selectedBranch) return false;
+      return p.name?.toLowerCase().includes(q) || p.productCode?.toLowerCase().includes(q);
+    }).slice(0, 50); // Limit results for snappiness
+  }, [allProducts, searchQuery, selectedBranch]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -74,7 +79,17 @@ function InventoryHistoryPageContent() {
             ابحث عن الصنف بالاسم أو الكود (تظهر الاقتراحات بعد 5 أحرف).
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col items-center">
+        <CardContent className="flex flex-col items-center gap-4">
+            <div className="w-full max-w-xl">
+                <Label className="text-xs font-semibold mb-1.5 block">تصفية البحث حسب الفرع</Label>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isLoadingBranches}>
+                    <SelectTrigger className="h-10"><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">كل الفروع</SelectItem>
+                        {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
             <div className="w-full max-w-xl">
                 <Popover open={open} onOpenChange={setOpen}>
                     <PopoverTrigger asChild>

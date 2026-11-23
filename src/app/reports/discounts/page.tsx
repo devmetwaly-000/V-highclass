@@ -3,7 +3,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { PageHeader } from '@/components/page-header';
-import type { Order } from '@/lib/definitions';
+import type { Order, Branch } from '@/lib/definitions';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Card,
   CardContent,
@@ -35,9 +36,13 @@ import { useUser } from '@/firebase';
 function DiscountsReportPageContent() {
   const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 30));
   const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
   
   const { appUser } = useUser();
-  const { data: allOrders, isLoading } = useRtdbList<Order>('daily-entries');
+  const { data: allOrders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+  const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
+
+  const isLoading = isLoadingOrders || isLoadingBranches;
 
   const filteredData = useMemo(() => {
     if (isLoading || !appUser) return { discountEntries: [], totalDiscount: 0 };
@@ -56,10 +61,13 @@ function DiscountsReportPageContent() {
             const discountDate = new Date(order.discountAppliedDate || order.orderDate);
             const dateMatch = (!start || discountDate >= start) && (!end || discountDate <= end);
             
-            // Branch filtering based on user permissions
+            // Branch filtering based on user permissions & branch selector
             let branchMatch = true;
             if (appUser.branchId && appUser.branchId !== 'all' && !appUser.permissions.includes('all')) {
                 branchMatch = order.branchId === appUser.branchId;
+            }
+            if (selectedBranch !== 'all') {
+                branchMatch = branchMatch && order.branchId === selectedBranch;
             }
 
             return dateMatch && branchMatch;
@@ -79,7 +87,7 @@ function DiscountsReportPageContent() {
     const totalDiscount = entries.reduce((sum, entry) => sum + entry.amount, 0);
 
     return { discountEntries: entries, totalDiscount };
-  }, [allOrders, isLoading, fromDate, toDate, appUser]);
+  }, [allOrders, isLoading, fromDate, toDate, appUser, selectedBranch]);
   
   const formatDate = (dateString?: string) => {
     if (!dateString) return '-';
@@ -106,7 +114,17 @@ function DiscountsReportPageContent() {
                 <CardTitle>فلترة البيانات</CardTitle>
             </div>
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="grid sm:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label>الفرع</Label>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isLoadingBranches}>
+                    <SelectTrigger><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">كل الفروع</SelectItem>
+                        {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
             <div className="flex flex-col gap-2">
                 <Label>من تاريخ</Label>
                  <DatePickerDialog

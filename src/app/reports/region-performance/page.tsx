@@ -7,7 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Filter, MapPin, TrendingUp, ShoppingCart, Repeat, CircleDollarSign } from 'lucide-react';
 import { useRtdbList } from '@/hooks/use-rtdb';
-import type { Order, Product, Region } from '@/lib/definitions';
+import type { Order, Product, Region, Branch } from '@/lib/definitions';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DatePickerDialog } from '@/components/ui/date-picker-dialog';
 import { Label } from '@/components/ui/label';
@@ -27,12 +28,14 @@ type RegionStats = {
 function RegionPerformanceReportPageContent() {
   const [fromDate, setFromDate] = useState<Date | undefined>(startOfMonth(new Date()));
   const [toDate, setToDate] = useState<Date | undefined>(endOfMonth(new Date()));
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
 
   const { data: regions, isLoading: isLoadingRegions } = useRtdbList<Region>('regions');
   const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+  const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
   const { data: products } = useRtdbList<Product>('products');
 
-  const isLoading = isLoadingRegions || isLoadingOrders;
+  const isLoading = isLoadingRegions || isLoadingOrders || isLoadingBranches;
 
   const performanceData = useMemo(() => {
     if (isLoading) return [];
@@ -71,6 +74,7 @@ function RegionPerformanceReportPageContent() {
 
     orders.forEach(order => {
         if (order.status === 'Cancelled') return;
+        if (selectedBranch !== 'all' && order.branchId !== selectedBranch) return;
 
         const orderDate = new Date(order.orderDate);
         if ((start && orderDate < start) || (end && orderDate > end)) return;
@@ -111,7 +115,7 @@ function RegionPerformanceReportPageContent() {
     return Object.values(statsMap)
         .filter(s => s.totalOrders > 0 || s.id !== unspecifiedId)
         .sort((a, b) => b.grossRevenue - a.grossRevenue);
-  }, [regions, orders, products, isLoading, fromDate, toDate]);
+  }, [regions, orders, products, isLoading, fromDate, toDate, selectedBranch]);
 
   const totals = useMemo(() => {
       return performanceData.reduce((acc, s) => ({
@@ -132,7 +136,17 @@ function RegionPerformanceReportPageContent() {
                 <CardTitle>فلترة البيانات</CardTitle>
             </div>
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="grid sm:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label>الفرع</Label>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isLoadingBranches}>
+                    <SelectTrigger><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">كل الفروع</SelectItem>
+                        {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
             <div className="flex flex-col gap-2">
                 <Label>من تاريخ</Label>
                  <DatePickerDialog

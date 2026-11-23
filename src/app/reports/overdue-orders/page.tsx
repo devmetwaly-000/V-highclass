@@ -4,18 +4,24 @@ import { PageHeader } from '@/components/page-header';
 import { AppLayout, AuthGuard } from '@/components/app-layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AlertTriangle, Eye } from 'lucide-react';
-import { useMemo } from 'react';
-import type { Order } from '@/lib/definitions';
+import { AlertTriangle, Eye, Filter } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import type { Order, Branch } from '@/lib/definitions';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { Skeleton } from '@/components/ui/skeleton';
 import { differenceInDays, startOfToday } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { OrderDetailsDialog } from '@/components/order-details-dialog';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 
 function OverdueOrdersPageContent() {
-  const { data: orders, isLoading } = useRtdbList<Order>('daily-entries');
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
+  const { data: orders, isLoading: isLoadingOrders } = useRtdbList<Order>('daily-entries');
+  const { data: branches, isLoading: isLoadingBranches } = useRtdbList<Branch>('branches');
+
+  const isLoading = isLoadingOrders || isLoadingBranches;
 
   const overdueOrders = useMemo(() => {
     if (isLoading) return [];
@@ -23,6 +29,9 @@ function OverdueOrdersPageContent() {
     return orders
       .filter(order => {
         if (order.transactionType !== 'Rental' || order.status !== 'Delivered to Customer' || !order.returnDate) {
+          return false;
+        }
+        if (selectedBranch !== 'all' && order.branchId !== selectedBranch) {
           return false;
         }
         try {
@@ -37,7 +46,7 @@ function OverdueOrdersPageContent() {
         daysOverdue: differenceInDays(today, new Date(order.returnDate!)),
       }))
       .sort((a, b) => b.daysOverdue - a.daysOverdue);
-  }, [orders, isLoading]);
+  }, [orders, isLoading, selectedBranch]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return '-';
@@ -52,6 +61,28 @@ function OverdueOrdersPageContent() {
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="تقرير الطلبات المتأخرة" showBackButton />
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            <CardTitle>فلترة حسب الفرع</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="grid sm:grid-cols-3 gap-4">
+          <div className="flex flex-col gap-2">
+            <Label>الفرع</Label>
+            <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={isLoadingBranches}>
+              <SelectTrigger><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">كل الفروع</SelectItem>
+                {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">

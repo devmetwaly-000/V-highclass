@@ -8,7 +8,8 @@ import { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { Product, Order } from '@/lib/definitions';
+import type { Product, Order, Branch } from '@/lib/definitions';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRtdbList } from '@/hooks/use-rtdb';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout } from '@/components/app-layout';
@@ -27,7 +28,7 @@ interface CategoryPerformance {
     totalCount: number;
 }
 
-const calculateCategoryPerformance = (products: Product[], orders: Order[], fromDate?: Date, toDate?: Date): CategoryPerformance[] => {
+const calculateCategoryPerformance = (products: Product[], orders: Order[], fromDate?: Date, toDate?: Date, branchId?: string): CategoryPerformance[] => {
     const performanceMap = new Map<string, CategoryPerformance>();
 
     // Initialize map with all product groups
@@ -51,6 +52,7 @@ const calculateCategoryPerformance = (products: Product[], orders: Order[], from
 
     const filteredOrders = orders.filter(order => {
         if (order.status === 'Cancelled') return false;
+        if (branchId && branchId !== 'all' && order.branchId !== branchId) return false;
         const orderDate = new Date(order.orderDate);
         return (!start || orderDate >= start) && (!end || orderDate <= end);
     });
@@ -90,12 +92,14 @@ const chartConfig = {
 function SalesByCategoryPageContent() {
     const [fromDate, setFromDate] = useState<Date | undefined>(subDays(new Date(), 30));
     const [toDate, setToDate] = useState<Date | undefined>(new Date());
+    const [selectedBranch, setSelectedBranch] = useState<string>('all');
 
     const { data: products, isLoading: loadingProducts } = useRtdbList<Product>('products');
     const { data: orders, isLoading: loadingOrders } = useRtdbList<Order>('daily-entries');
-    const isLoading = loadingProducts || loadingOrders;
+    const { data: branches, isLoading: loadingBranches } = useRtdbList<Branch>('branches');
+    const isLoading = loadingProducts || loadingOrders || loadingBranches;
 
-    const performanceData = useMemo(() => isLoading ? [] : calculateCategoryPerformance(products, orders, fromDate, toDate), [products, orders, isLoading, fromDate, toDate]);
+    const performanceData = useMemo(() => isLoading ? [] : calculateCategoryPerformance(products, orders, fromDate, toDate, selectedBranch), [products, orders, isLoading, fromDate, toDate, selectedBranch]);
     const formatCurrency = (amount: number) => `${amount.toLocaleString()} ج.م`;
     const tickFormatter = (value: number) => value.toLocaleString();
 
@@ -110,7 +114,17 @@ function SalesByCategoryPageContent() {
                 <CardTitle>فلترة البيانات</CardTitle>
             </div>
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <CardContent className="grid sm:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-2">
+                <Label>الفرع</Label>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch} disabled={loadingBranches}>
+                    <SelectTrigger><SelectValue placeholder="كل الفروع" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">كل الفروع</SelectItem>
+                        {branches.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
             <div className="flex flex-col gap-2">
                 <Label>من تاريخ</Label>
                  <DatePickerDialog
