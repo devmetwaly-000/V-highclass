@@ -74,6 +74,7 @@ import { CancelOrderDialog } from './cancel-order-dialog';
 import { ExchangeItemDialog } from './exchange-item-dialog';
 import { EditPaymentsDialog } from './edit-payments-dialog';
 import { DeletePaymentDialog } from './delete-payment-dialog';
+import { EditTailorNotesDialog } from './edit-tailor-notes-dialog';
 import { useDatabase, useUser } from '@/firebase';
 import { ref, update } from 'firebase/database';
 import { format } from 'date-fns';
@@ -421,28 +422,46 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                                                 <p className="font-mono text-green-600">{(item.itemDiscount || 0).toLocaleString()}</p>
                                             </div>
                                         </div>
-                                        {(item.tailorNotes || item.measurements) && (
-                                            <div className="pt-2 border-t space-y-2 text-sm">
-                                                {item.measurements && (
-                                                    <div className="flex items-start gap-2">
-                                                        <Ruler className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                                        <div className="pt-2 border-t space-y-2 text-sm">
+                                            {item.measurements && (
+                                                <div className="flex items-start gap-2">
+                                                    <Ruler className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-xs font-semibold text-muted-foreground">القياسات</p>
+                                                        <p className="text-sm break-words">{item.measurements}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {item.tailorNotes ? (
+                                                <div className="flex items-start justify-between gap-2 bg-amber-500/5 p-2 rounded-md border border-amber-500/20">
+                                                    <div className="flex items-start gap-2 min-w-0 flex-1">
+                                                        <Scissors className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
                                                         <div className="min-w-0">
-                                                            <p className="text-xs font-semibold text-muted-foreground">القياسات</p>
-                                                            <p className="text-sm break-words">{item.measurements}</p>
+                                                            <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">ملاحظات الخياط</p>
+                                                            <p className="text-sm break-words font-medium">{item.tailorNotes}</p>
                                                         </div>
                                                     </div>
-                                                )}
-                                                {item.tailorNotes && (
-                                                    <div className="flex items-start gap-2">
-                                                        <Scissors className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-                                                        <div className="min-w-0">
-                                                            <p className="text-xs font-semibold text-muted-foreground">ملاحظات الخياط</p>
-                                                            <p className="text-sm break-words">{item.tailorNotes}</p>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
+                                                    <EditTailorNotesDialog
+                                                        order={order}
+                                                        itemIndex={index}
+                                                        item={item}
+                                                        trigger={
+                                                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0 text-amber-600 hover:text-amber-700" title="تعديل ملاحظات الخياط">
+                                                                <Pencil className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                        }
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div className="flex justify-end pt-0.5">
+                                                    <EditTailorNotesDialog
+                                                        order={order}
+                                                        itemIndex={index}
+                                                        item={item}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -472,30 +491,41 @@ function OrderDetailsContent({ order: initialOrder, orderId }: { order: Order | 
                                                 <TableCell className="text-center font-mono text-green-600">{(item.itemDiscount || 0).toLocaleString()} ج.م</TableCell>
                                                 <TableCell className="text-center font-mono font-bold">{(item.priceAtTimeOfOrder * item.quantity).toLocaleString()} ج.م</TableCell>
                                             </TableRow>
-                                            {(item.tailorNotes || item.measurements) && (
-                                                <TableRow className="bg-muted/50">
-                                                    <TableCell colSpan={5} className="py-2 px-4">
-                                                        {item.measurements &&
-                                                            <div className="flex items-start gap-2 mb-2">
-                                                                <Ruler className="h-4 w-4 mt-1 text-muted-foreground" />
-                                                                <div className="flex-1">
-                                                                    <p className="text-xs font-semibold text-muted-foreground">القياسات</p>
-                                                                    <p className="text-sm">{item.measurements}</p>
+                                            <TableRow className="bg-muted/30 hover:bg-muted/40">
+                                                <TableCell colSpan={5} className="py-2.5 px-4">
+                                                    <div className="flex items-center justify-between gap-4">
+                                                        <div className="flex items-center gap-6 flex-wrap flex-1">
+                                                            {item.measurements && (
+                                                                <div className="flex items-center gap-2">
+                                                                    <Ruler className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                                    <span className="text-xs font-semibold text-muted-foreground">القياسات:</span>
+                                                                    <span className="text-xs font-medium">{item.measurements}</span>
                                                                 </div>
-                                                            </div>
-                                                        }
-                                                        {item.tailorNotes &&
-                                                            <div className="flex items-start gap-2">
-                                                                <Scissors className="h-4 w-4 mt-1 text-muted-foreground" />
-                                                                <div className="flex-1">
-                                                                    <p className="text-xs font-semibold text-muted-foreground">ملاحظات الخياط</p>
-                                                                    <p className="text-sm">{item.tailorNotes}</p>
+                                                            )}
+                                                            {item.tailorNotes ? (
+                                                                <div className="flex items-center gap-2">
+                                                                    <Scissors className="h-4 w-4 text-amber-600 shrink-0" />
+                                                                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">ملاحظات الخياط:</span>
+                                                                    <span className="text-xs font-medium text-foreground">{item.tailorNotes}</span>
                                                                 </div>
-                                                            </div>
-                                                        }
-                                                    </TableCell>
-                                                </TableRow>
-                                            )}
+                                                            ) : (
+                                                                <span className="text-xs text-muted-foreground italic">لا توجد ملاحظات خياط مسجلة لهذا الصنف</span>
+                                                            )}
+                                                        </div>
+                                                        <EditTailorNotesDialog
+                                                            order={order}
+                                                            itemIndex={index}
+                                                            item={item}
+                                                            trigger={
+                                                                <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs gap-1.5 shrink-0 border-dashed hover:border-primary hover:bg-primary/5 text-primary">
+                                                                    <Pencil className="h-3.5 w-3.5" />
+                                                                    {item.tailorNotes ? 'تعديل ملاحظات الخياط' : 'إضافة ملاحظات خياط'}
+                                                                </Button>
+                                                            }
+                                                        />
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
                                         </React.Fragment>
                                     )
                                 })}
